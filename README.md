@@ -1,6 +1,6 @@
 # NYC Subway Finder
 
-Find the nearest NYC subway station that serves the line you want. Allow location (or type a place / tap the map), pick a line, and see the closest station plus two alternatives with straight-line distance and a map.
+Find the nearest NYC subway station that serves the line you want. Allow location (or type a place / tap the map), pick a line, and see the closest station plus two alternatives, ranked by estimated walking distance along the street grid. Tap any result to see it on the map along with its walking path, or open Google Maps walking directions from your location.
 
 **Live site:** https://ywu60.github.io/nyc-subway-finder/
 
@@ -17,8 +17,8 @@ nyc-subway-finder/
 ├── .nojekyll                   # serve files as-is on GitHub Pages
 ├── src/
 │   ├── app.js                  # UI: location, route picker, results, map
-│   ├── geo.js                  # Haversine distance, formatting, lat/lon parsing
-│   ├── stations.js             # exact-service filter, complex dedupe, ranking
+│   ├── geo.js                  # street-grid + Haversine distance, formatting, parsing
+│   ├── stations.js             # exact-service filter, complex dedupe, walking-distance ranking
 │   ├── routes.js               # route list + MTA colors
 │   └── styles.css
 ├── data/
@@ -48,7 +48,7 @@ Requires Node 18+. No packages to install.
 npm test          # node --test tests/*.test.js
 ```
 
-Tests cover Haversine accuracy against an independent formula, exact-service filtering (e.g. `S` ≠ `SI`), ascending sort, the 3-result limit, complex de-duplication, invalid coordinates, unsupported routes, mile formatting, and checks on the real dataset (all coordinates within NYC, every route has stations, D→F changes results, shuttles stay separate).
+Tests cover street-grid (Manhattan) distance on north–south and rotated grids, check that it's never shorter than straight-line, check that ranking by it can differ from straight-line, and cover Haversine accuracy against an independent formula, exact-service filtering (e.g. `S` ≠ `SI`), ascending sort, the 3-result limit, complex de-duplication, invalid coordinates, unsupported routes, mile formatting, and checks on the real dataset (all coordinates within NYC, every route has stations, D→F changes results, shuttles stay separate).
 
 ## Rebuild station data
 
@@ -104,11 +104,12 @@ This repo uses **branch publishing**. There's no build step and no Actions workf
 ## Privacy
 
 - Coordinates stay in browser memory for the current tab. Nothing is stored (no cookies, no localStorage), and there's no app server or analytics.
-- Third-party requests: OpenStreetMap tile servers (map images for the visible area), unpkg.com (Leaflet library), OpenStreetMap Nominatim (only when you type a place name; receives the text you typed), and Google Maps (only if you tap "Walking directions").
+- Third-party requests: OpenStreetMap tile servers (map images for the visible area), unpkg.com (Leaflet library), OpenStreetMap Nominatim (only when you type a place name; receives the text you typed), and Google Maps (only if you tap "Walking directions"; the link includes your location as the route origin).
 
 ## Limitations
 
-- Distances are **straight-line** (great-circle, Haversine with R = 6371 km, × 0.621371 for miles), not walking distance or time. The nearest station by air may not be the shortest walk, e.g. across rivers or highways.
+- **How distance works:** results are ranked by **Manhattan (street-grid) distance**, i.e. how far you'd walk along a grid of streets: the uptown/downtown leg plus the crosstown leg. For stations in Manhattan the grid is rotated 29° to match the avenues; in other boroughs a north–south/east–west grid is assumed. The map draws this two-leg path for the selected station. It's an estimate: diagonal streets (Broadway), parks, rivers and irregular street layouts make real routes differ.
+- **Exact routes:** "Walking directions (Google Maps)" opens Google Maps with your app location as the origin and the station as the destination, in walking mode, so Google finds the actual shortest walking route.
 - Station coordinates are station locations, not entrances or elevators.
 - Services shown are the dataset's **assigned daytime routes**. Late nights, weekends, express/local patterns and planned work can differ, and stations may be temporarily closed or bypassed. There are no real-time arrivals or alerts.
 - Place search depends on Nominatim's free service and is bounded to the NYC area.

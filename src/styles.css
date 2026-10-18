@@ -202,7 +202,20 @@ main {
   margin-bottom: 2px;
 }
 .alt-heading { margin: 14px 0 6px; font-size: 0.9rem; color: var(--muted); font-weight: 600; }
-.directions { display: inline-block; margin-top: 6px; font-size: 0.9rem; }
+.result { cursor: pointer; }
+.result.selected { outline: 3px solid var(--accent); outline-offset: 1px; }
+.result-actions { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 6px; align-items: center; }
+.directions { display: inline-block; font-size: 0.9rem; padding: 6px 0; }
+.link-btn {
+  background: none;
+  border: 0;
+  padding: 6px 0;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+}
 .notice { margin: 10px 0 0; font-size: 0.85rem; color: var(--warn); }
 
 /* Map */
@@ -210,14 +223,42 @@ main {
 .map { height: 360px; width: 100%; background: var(--bg); }
 .map-card .hint { padding: 12px 16px; margin: 0; }
 .leaflet-container { font: inherit; }
-.user-dot {
-  width: 18px;
-  height: 18px;
+/* "You are here" marker: dot + soft halo, so the chosen location stands out. */
+.user-pin { position: relative; width: 44px; height: 44px; }
+.user-dot, .user-pulse {
+  position: absolute;
+  left: 50%;
+  top: 50%;
   border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+.user-dot {
+  width: 20px;
+  height: 20px;
   background: #1a73e8;
   border: 3px solid #fff;
-  box-shadow: 0 0 0 2px #1a73e8, 0 1px 4px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
 }
+.user-pulse {
+  width: 44px;
+  height: 44px;
+  background: rgba(26, 115, 232, 0.35);
+  animation: user-pulse 2s ease-out infinite;
+}
+@keyframes user-pulse {
+  from { transform: translate(-50%, -50%) scale(0.5); opacity: 1; }
+  to { transform: translate(-50%, -50%) scale(1.4); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .user-pulse { animation: none; opacity: 0.5; }
+}
+.leaflet-tooltip.user-label {
+  background: #1a73e8;
+  color: #fff;
+  border-color: #1a73e8;
+  font-weight: 700;
+}
+.leaflet-tooltip-bottom.user-label::before { border-bottom-color: #1a73e8; }
 
 .site-footer {
   max-width: 720px;

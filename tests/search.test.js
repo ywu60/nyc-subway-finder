@@ -2,7 +2,17 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { formatMiles, haversineKm, haversineMiles, isValidCoordinate, parseLatLon } from "../src/geo.js";
+import {
+  MANHATTAN_GRID_DEG,
+  formatMiles,
+  gridCorner,
+  haversineKm,
+  haversineMiles,
+  isValidCoordinate,
+  parseLatLon,
+  streetGridKm,
+  streetGridMiles,
+} from "../src/geo.js";
 import { ROUTES } from "../src/routes.js";
 import { availableServices, findNearestStations, validateStationData } from "../src/stations.js";
 
@@ -37,11 +47,65 @@ test("haversine matches known distances", () => {
   assert.ok(Math.abs(haversineMiles(0, 0, 1, 0) - 111.19493 * 0.621371) < 1e-3);
 });
 
-test("closest station matches independently computed distance", () => {
+test("closest station matches independently computed distances", () => {
   const [lat, lon] = [40.7515, -73.99];
   const [first] = findNearestStations(sample, lat, lon, "D");
   assert.equal(first.station.name, "Alpha");
-  assert.ok(Math.abs(first.distanceMiles - referenceMiles(lat, lon, 40.75, -73.99)) < 1e-6);
+  assert.ok(Math.abs(first.straightMiles - referenceMiles(lat, lon, 40.75, -73.99)) < 1e-6);
+  // Same meridian: walking the grid is just the north–south leg.
+  assert.ok(Math.abs(first.distanceMiles - 0.0015 * KM_PER_DEG * 0.621371) < 1e-9);
+});
+
+// Independent planar helpers for the street-grid tests.
+const KM_PER_DEG = (Math.PI / 180) * 6371;
+function offsetFrom(lat, lon, eastKm, northKm) {
+  return [lat + northKm / KM_PER_DEG, lon + eastKm / (KM_PER_DEG * Math.cos((lat * Math.PI) / 180))];
+}
+
+test("street-grid distance on a north–south grid is |east| + |north|", () => {
+  const [lat, lon] = offsetFrom(40.7, -73.95, 0.3, 0.4);
+  assert.ok(Math.abs(streetGridKm(40.7, -73.95, lat, lon, 0) - 0.7) < 1e-3);
+  assert.ok(Math.abs(haversineKm(40.7, -73.95, lat, lon) - 0.5) < 1e-3);
+});
+
+test("street-grid distance follows Manhattan's rotated grid", () => {
+  const t = (MANHATTAN_GRID_DEG * Math.PI) / 180;
+  // 1 km straight up an avenue: no crosstown leg, so grid = straight line.
+  const [aLat, aLon] = offsetFrom(40.76, -73.98, Math.sin(t), Math.cos(t));
+  assert.ok(Math.abs(streetGridKm(40.76, -73.98, aLat, aLon, MANHATTAN_GRID_DEG) - 1) < 1e-3);
+  // 0.6 km uptown + 0.8 km crosstown = 1.4 km walked, 1.0 km as the crow flies.
+  const [bLat, bLon] = offsetFrom(40.76, -73.98, 0.6 * Math.sin(t) + 0.8 * Math.cos(t), 0.6 * Math.cos(t) - 0.8 * Math.sin(t));
+  assert.ok(Math.abs(streetGridKm(40.76, -73.98, bLat, bLon, MANHATTAN_GRID_DEG) - 1.4) < 1e-3);
+  assert.ok(Math.abs(haversineKm(40.76, -73.98, bLat, bLon) - 1.0) < 1e-3);
+});
+
+test("street-grid distance is never shorter than straight-line", () => {
+  for (let i = 0; i < 500; i++) {
+    const lat2 = 40.6 + Math.random() * 0.3;
+    const lon2 = -74.05 + Math.random() * 0.3;
+    for (const deg of [0, MANHATTAN_GRID_DEG]) {
+      assert.ok(streetGridMiles(40.75, -73.99, lat2, lon2, deg) >= haversineMiles(40.75, -73.99, lat2, lon2) - 1e-6);
+    }
+  }
+});
+
+test("grid corner splits the walk into its two legs", () => {
+  const [a, b, c, d] = [40.7527, -73.9772, 40.7681, -73.9819];
+  const corner = gridCorner(a, b, c, d, MANHATTAN_GRID_DEG);
+  const legs = haversineKm(a, b, ...corner) + haversineKm(...corner, c, d);
+  assert.ok(Math.abs(legs - streetGridKm(a, b, c, d, MANHATTAN_GRID_DEG)) < 1e-3);
+});
+
+test("ranking uses walking distance, which can differ from straight-line", () => {
+  const [pLat, pLon] = offsetFrom(40.7, -73.95, 0.5, 0.5); // diagonal: 0.71 km air, 1.0 km walk
+  const [qLat, qLon] = offsetFrom(40.7, -73.95, 0, 0.8); //  due north: 0.8 km both
+  const pts = [
+    { id: "p", complexId: "p", name: "Diagonal", latitude: pLat, longitude: pLon, services: ["A"] },
+    { id: "q", complexId: "q", name: "Straight", latitude: qLat, longitude: qLon, services: ["A"] },
+  ];
+  const res = findNearestStations(pts, 40.7, -73.95, "A");
+  assert.deepEqual(res.map((r) => r.station.name), ["Straight", "Diagonal"]);
+  assert.ok(res[1].straightMiles < res[0].straightMiles);
 });
 
 test("filters by exact service and sorts ascending", () => {

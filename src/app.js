@@ -1,9 +1,9 @@
 // UI controller: location, route selection, results and map.
 // Coordinates live only in the `state` object below; nothing is persisted.
 
-import { formatMiles, isValidCoordinate, parseLatLon } from "./geo.js";
+import { formatMiles, gridCorner, isValidCoordinate, parseLatLon } from "./geo.js";
 import { ROUTES, getRoute } from "./routes.js";
-import { availableServices, findNearestStations, validateStationData } from "./stations.js";
+import { availableServices, findNearestStations, gridAngleFor, validateStationData } from "./stations.js";
 
 const NYC_CENTER = [40.7359, -73.9911];
 const FAR_FROM_NYC_MILES = 20;
@@ -93,45 +93,101 @@ const map = (() => {
   });
 
   const layer = L.layerGroup().addTo(m);
-  const userIcon = L.divIcon({ className: "", html: '<div class="user-dot"></div>', iconSize: [18, 18] });
+  const pathLayer = L.layerGroup().addTo(m);
+  const userIcon = L.divIcon({
+    className: "",
+    html: '<div class="user-pin"><span class="user-pulse"></span><span class="user-dot"></span></div>',
+    iconSize: [44, 44],
+    iconAnchor: [22, 22],
+  });
 
   m.on("click", (e) => {
-    setLocation({ lat: e.latlng.lat, lon: e.latlng.lng, source: "manual" });
+    setLocation({ lat: e.latlng.lat, lon: e.latlng.lng, source: "manual", label: "Dropped pin" });
     setStatus("Using the pin you placed on the map.");
   });
+
+  let current = { location: null, results: [], route: null, markers: [] };
+
+  const styleFor = (selected, route) => ({
+    radius: selected ? 14 : 8,
+    color: selected ? "#111" : "#fff",
+    weight: selected ? 4 : 2,
+    fillColor: route.color,
+    fillOpacity: selected ? 1 : 0.85,
+  });
+
+  function select(index, { fit = true } = {}) {
+    const { location, results, route, markers } = current;
+    pathLayer.clearLayers();
+    markers.forEach((marker, i) => {
+      const selected = i === index;
+      marker.setStyle(styleFor(selected, route));
+      if (selected) {
+        marker.bringToFront();
+        marker.openTooltip();
+      } else {
+        marker.closeTooltip();
+      }
+    });
+    const hit = results[index];
+    if (!hit || !location) return;
+    const { station } = hit;
+    const from = [location.lat, location.lon];
+    const to = [station.latitude, station.longitude];
+    const corner = gridCorner(location.lat, location.lon, station.latitude, station.longitude, gridAngleFor(station));
+    L.polyline([from, corner, to], { color: "#111", weight: 4, opacity: 0.7, dashArray: "2 8", lineCap: "round" })
+      .addTo(pathLayer);
+    if (fit) m.fitBounds([from, corner, to], { padding: [60, 60], maxZoom: 17 });
+  }
 
   return {
     render(location, results, route) {
       layer.clearLayers();
+      pathLayer.clearLayers();
       const points = [];
+      const markers = [];
       if (location) {
         const ll = [location.lat, location.lon];
+        L.circle(ll, {
+          radius: Math.min(Math.max(location.accuracy || 60, 60), 400),
+          color: "#1a73e8",
+          weight: 1,
+          fillColor: "#1a73e8",
+          fillOpacity: 0.12,
+          interactive: false,
+        }).addTo(layer);
         L.marker(ll, { icon: userIcon, title: "Your location", keyboard: false, zIndexOffset: 1000 })
-          .bindTooltip(location.source === "gps" ? "You are here" : "Selected location")
+          .bindTooltip(location.source === "gps" ? "You are here" : location.label || "Your location", {
+            permanent: true,
+            direction: "bottom",
+            offset: [0, 14],
+            className: "user-label",
+          })
           .addTo(layer);
         points.push(ll);
       }
       results.forEach(({ station, distanceMiles }, i) => {
         const ll = [station.latitude, station.longitude];
-        const primary = i === 0;
-        L.circleMarker(ll, {
-          radius: primary ? 12 : 8,
-          color: primary ? "#111" : "#fff",
-          weight: primary ? 4 : 2,
-          fillColor: route.color,
-          fillOpacity: 1,
-        })
-          .bindTooltip(`${primary ? "Nearest: " : ""}${station.name} · ${formatMiles(distanceMiles)}`, {
-            permanent: primary,
+        const marker = L.circleMarker(ll, styleFor(false, route))
+          .bindTooltip(`${i === 0 ? "Nearest: " : ""}${station.name} · ${formatMiles(distanceMiles)}`, {
+            permanent: true,
             direction: "top",
-            offset: [0, -10],
+            offset: [0, -12],
+          })
+          .on("click", (e) => {
+            L.DomEvent.stopPropagation(e); // don't treat as "drop a pin"
+            selectResult(i);
           })
           .addTo(layer);
+        markers.push(marker);
         points.push(ll);
       });
-      if (points.length > 1) m.fitBounds(points, { padding: [40, 40], maxZoom: 16 });
+      current = { location, results, route, markers };
+      if (points.length > 1) m.fitBounds(points, { padding: [50, 50], maxZoom: 16 });
       else if (points.length === 1) m.setView(points[0], 15);
     },
+    select,
+    element: m.getContainer(),
   };
 })();
 
@@ -193,11 +249,20 @@ function selectRoute(routeId) {
 
 // ---------- Results ----------
 
-function directionsUrl(station) {
-  return `https://www.google.com/maps/dir/?api=1&travelmode=walking&destination=${station.latitude},${station.longitude}`;
+// Google Maps picks the shortest walking route between the two points.
+// The origin is the location used in the app (GPS, typed place or pin).
+function directionsUrl(location, station) {
+  const params = new URLSearchParams({
+    api: "1",
+    origin: `${location.lat},${location.lon}`,
+    destination: `${station.latitude},${station.longitude}`,
+    travelmode: "walking",
+  });
+  return `https://www.google.com/maps/dir/?${params}`;
 }
 
-function resultItem({ station, distanceMiles }, route, primary) {
+function resultItem({ station, distanceMiles }, route, index) {
+  const primary = index === 0;
   const meta = [BOROUGHS[station.borough] || station.borough];
   if (station.ada === 1) meta.push("ADA accessible");
   else if (station.ada === 2) meta.push("Partially accessible");
@@ -205,9 +270,9 @@ function resultItem({ station, distanceMiles }, route, primary) {
   const others = all.filter((s) => s !== route.id).map((s) => getRoute(s)?.label || s);
   if (others.length) meta.push(`Also: ${[...new Set(others)].join(" ")}`);
 
-  return el(
+  const item = el(
     "li",
-    { class: `result${primary ? " primary" : ""}` },
+    { class: `result${primary ? " primary" : ""}`, "data-index": String(index) },
     badge(route),
     el(
       "div",
@@ -215,21 +280,55 @@ function resultItem({ station, distanceMiles }, route, primary) {
       primary ? el("span", { class: "result-label" }, "Nearest station") : null,
       el("p", { class: "result-name" }, station.name),
       el("p", { class: "result-meta" }, meta.join(" · ")),
-      primary
-        ? el(
-            "a",
-            { class: "directions", href: directionsUrl(station), target: "_blank", rel: "noopener" },
-            "Walking directions (Google Maps) ↗",
-          )
-        : null,
+      el(
+        "div",
+        { class: "result-actions" },
+        el(
+          "button",
+          { type: "button", class: "link-btn show-on-map", "aria-pressed": "false" },
+          "Show on map",
+        ),
+        el(
+          "a",
+          {
+            class: "directions",
+            href: directionsUrl(state.location, station),
+            target: "_blank",
+            rel: "noopener",
+          },
+          "Walking directions (Google Maps) ↗",
+        ),
+      ),
     ),
     el(
       "div",
       { class: "result-dist" },
       formatMiles(distanceMiles),
-      el("small", {}, "straight-line"),
+      el("small", {}, "walking, via streets"),
     ),
   );
+  // Whole card is a click target (mouse/touch); the button covers keyboard use.
+  item.addEventListener("click", (e) => {
+    if (e.target.closest("a")) return;
+    selectResult(index, { scroll: true });
+  });
+  return item;
+}
+
+function selectResult(index, { scroll = false, fit = true } = {}) {
+  for (const card of els.results.querySelectorAll(".result")) {
+    const selected = Number(card.dataset.index) === index;
+    card.classList.toggle("selected", selected);
+    const btn = card.querySelector(".show-on-map");
+    btn.setAttribute("aria-pressed", String(selected));
+    btn.textContent = selected ? "Shown on map ✓" : "Show on map";
+  }
+  if (!map) return;
+  map.select(index, { fit });
+  if (scroll) {
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    map.element.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
+  }
 }
 
 function renderEmpty(message) {
@@ -267,13 +366,21 @@ function update() {
   }
 
   const [nearest, ...alts] = results;
-  const children = [el("ul", { class: "results-list" }, resultItem(nearest, route, true))];
+  const children = [el("ul", { class: "results-list" }, resultItem(nearest, route, 0))];
   if (alts.length) {
     children.push(
       el("p", { class: "alt-heading" }, "Other nearby options"),
-      el("ul", { class: "results-list" }, ...alts.map((r) => resultItem(r, route, false))),
+      el("ul", { class: "results-list" }, ...alts.map((r, i) => resultItem(r, route, i + 1))),
     );
   }
+  children.push(
+    el(
+      "p",
+      { class: "hint" },
+      "Walking distance is estimated along the street grid (“Manhattan distance”). " +
+        "Tap a station to see it on the map; Google Maps gives the exact shortest route.",
+    ),
+  );
   if (nearest.distanceMiles > FAR_FROM_NYC_MILES) {
     children.push(
       el("p", { class: "notice" }, "This location looks far from New York City, so these distances are large."),
@@ -281,6 +388,7 @@ function update() {
   }
   els.results.replaceChildren(...children);
   map?.render(state.location, results, route);
+  selectResult(0, { fit: false });
 }
 
 // ---------- Location ----------
@@ -354,7 +462,7 @@ async function geocode(query) {
   if (!res.ok) throw new Error(`Lookup failed (${res.status})`);
   const [hit] = await res.json();
   if (!hit) return null;
-  return { lat: Number(hit.lat), lon: Number(hit.lon), label: hit.display_name };
+  return { lat: Number(hit.lat), lon: Number(hit.lon), label: hit.display_name, short: hit.name || hit.display_name.split(",")[0] };
 }
 
 els.manualForm.addEventListener("submit", async (e) => {
@@ -367,7 +475,7 @@ els.manualForm.addEventListener("submit", async (e) => {
   const coords = parseLatLon(text);
   if (coords) {
     setStatus(`Using ${coords.lat.toFixed(5)}, ${coords.lon.toFixed(5)}.`);
-    setLocation({ ...coords, source: "manual" });
+    setLocation({ ...coords, source: "manual", label: "Your location" });
     return;
   }
   if (/^[-\d.,\s]+$/.test(text)) {
@@ -382,7 +490,7 @@ els.manualForm.addEventListener("submit", async (e) => {
       return;
     }
     setStatus(`Using: ${hit.label}`);
-    setLocation({ lat: hit.lat, lon: hit.lon, source: "manual" });
+    setLocation({ lat: hit.lat, lon: hit.lon, source: "manual", label: hit.short });
   } catch {
     setStatus("Place lookup is unavailable right now. Enter “lat, lon” or tap the map instead.", "error");
   }
