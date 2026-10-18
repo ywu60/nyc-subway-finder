@@ -97,9 +97,21 @@ const map = (() => {
   const userIcon = L.divIcon({
     className: "",
     html: '<div class="user-pin"><span class="user-pulse"></span><span class="user-dot"></span></div>',
-    iconSize: [44, 44],
-    iconAnchor: [22, 22],
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
   });
+
+  // Legend instead of a permanent label, so nothing covers the location dot.
+  const legend = L.control({ position: "bottomleft" });
+  legend.onAdd = () => {
+    const div = L.DomUtil.create("div", "map-legend");
+    div.innerHTML =
+      '<span><i class="legend-user"></i>You</span>' +
+      '<span><i class="legend-selected"></i>Selected station</span>' +
+      '<span><i class="legend-path"></i>Walking path (est.)</span>';
+    return div;
+  };
+  legend.addTo(m);
 
   m.on("click", (e) => {
     setLocation({ lat: e.latlng.lat, lon: e.latlng.lng, source: "manual", label: "Dropped pin" });
@@ -122,12 +134,13 @@ const map = (() => {
     markers.forEach((marker, i) => {
       const selected = i === index;
       marker.setStyle(styleFor(selected, route));
-      if (selected) {
-        marker.bringToFront();
-        marker.openTooltip();
-      } else {
-        marker.closeTooltip();
-      }
+      marker.unbindTooltip().bindTooltip(marker.labelText, {
+        permanent: selected,
+        direction: "top",
+        offset: [0, -14],
+        className: selected ? "station-label selected" : "station-label",
+      });
+      if (selected) marker.bringToFront().openTooltip();
     });
     const hit = results[index];
     if (!hit || !location) return;
@@ -135,7 +148,7 @@ const map = (() => {
     const from = [location.lat, location.lon];
     const to = [station.latitude, station.longitude];
     const corner = gridCorner(location.lat, location.lon, station.latitude, station.longitude, gridAngleFor(station));
-    L.polyline([from, corner, to], { color: "#111", weight: 4, opacity: 0.7, dashArray: "2 8", lineCap: "round" })
+    L.polyline([from, corner, to], { color: "#1a1a1a", weight: 5, opacity: 0.9, dashArray: "1 9", lineCap: "round" })
       .addTo(pathLayer);
     if (fit) m.fitBounds([from, corner, to], { padding: [60, 60], maxZoom: 17 });
   }
@@ -149,18 +162,18 @@ const map = (() => {
       if (location) {
         const ll = [location.lat, location.lon];
         L.circle(ll, {
-          radius: Math.min(Math.max(location.accuracy || 60, 60), 400),
+          radius: Math.min(Math.max(location.accuracy || 40, 40), 300),
           color: "#1a73e8",
           weight: 1,
+          opacity: 0.5,
           fillColor: "#1a73e8",
-          fillOpacity: 0.12,
+          fillOpacity: 0.08,
           interactive: false,
         }).addTo(layer);
         L.marker(ll, { icon: userIcon, title: "Your location", keyboard: false, zIndexOffset: 1000 })
           .bindTooltip(location.source === "gps" ? "You are here" : location.label || "Your location", {
-            permanent: true,
             direction: "bottom",
-            offset: [0, 14],
+            offset: [0, 10],
             className: "user-label",
           })
           .addTo(layer);
@@ -168,12 +181,9 @@ const map = (() => {
       }
       results.forEach(({ station, distanceMiles }, i) => {
         const ll = [station.latitude, station.longitude];
-        const marker = L.circleMarker(ll, styleFor(false, route))
-          .bindTooltip(`${i === 0 ? "Nearest: " : ""}${station.name} · ${formatMiles(distanceMiles)}`, {
-            permanent: true,
-            direction: "top",
-            offset: [0, -12],
-          })
+        const marker = L.circleMarker(ll, styleFor(false, route));
+        marker.labelText = `${i === 0 ? "Nearest: " : ""}${station.name} · ${formatMiles(distanceMiles)}`;
+        marker
           .on("click", (e) => {
             L.DomEvent.stopPropagation(e); // don't treat as "drop a pin"
             selectResult(i);
