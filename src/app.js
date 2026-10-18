@@ -1,9 +1,10 @@
 // UI controller: location, route selection, results and map.
 // Coordinates live only in the `state` object below; nothing is persisted.
 
-import { formatMiles, gridCorner, isValidCoordinate, parseLatLon } from "./geo.js?v=4";
-import { ROUTES, getRoute } from "./routes.js?v=4";
-import { availableServices, findNearestStations, gridAngleFor, validateStationData } from "./stations.js?v=4";
+import { formatMiles, isValidCoordinate, parseLatLon } from "./geo.js?v=5";
+import { ROUTES, getRoute } from "./routes.js?v=5";
+import { walkingMiles, walkingRoute } from "./routing.js?v=5";
+import { availableServices, findNearestStations, rerankByWalking, validateStationData } from "./stations.js?v=5";
 
 const NYC_CENTER = [40.7359, -73.9911];
 const FAR_FROM_NYC_MILES = 20;
@@ -78,7 +79,9 @@ const map = (() => {
   const m = L.map("map", { zoomControl: true }).setView(NYC_CENTER, 11);
   const tiles = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors · ' +
+      'Routes: <a href="https://routing.openstreetmap.de/about.html">FOSSGIS OSRM</a>',
   }).addTo(m);
   let tileErrors = 0;
   tiles.on("tileerror", () => {
@@ -109,7 +112,7 @@ const map = (() => {
     div.innerHTML =
       '<span><i class="legend-user"></i>You</span>' +
       '<span><i class="legend-selected"></i>Selected station</span>' +
-      '<span><i class="legend-path"></i>Walking path (est.)</span>';
+      '<span><i class="legend-path"></i>Walking route</span>';
     return div;
   };
   legend.addTo(m);
@@ -129,9 +132,12 @@ const map = (() => {
     fillOpacity: selected ? 1 : 0.85,
   });
 
+  let selectToken = 0;
+
   function select(index, { fit = true } = {}) {
     const { location, results, route, markers } = current;
     pathLayer.clearLayers();
+    els.mapStatus.hidden = true;
     markers.forEach((marker, i) => {
       const selected = i === index;
       marker.setStyle(styleFor(selected, route));
@@ -146,12 +152,25 @@ const map = (() => {
     const hit = results[index];
     if (!hit || !location) return;
     const { station } = hit;
-    const from = [location.lat, location.lon];
     const to = [station.latitude, station.longitude];
-    const corner = gridCorner(location.lat, location.lon, station.latitude, station.longitude, gridAngleFor(station));
-    L.polyline([from, corner, to], { color: "#1a1a1a", weight: 5, opacity: 0.9, dashArray: "1 9", lineCap: "round" })
-      .addTo(pathLayer);
-    if (fit) m.fitBounds([from, corner, to], { padding: [60, 60], maxZoom: 17 });
+    if (fit) m.fitBounds([[location.lat, location.lon], to], { padding: [60, 60], maxZoom: 17 });
+
+    // Draw the real street-following route once it arrives. Ignore stale
+    // responses if the user has picked another station meanwhile.
+    const token = ++selectToken;
+    walkingRoute(location.lat, location.lon, station)
+      .then(({ path }) => {
+        if (token !== selectToken) return;
+        L.polyline(path, { color: "#fff", weight: 9, opacity: 0.9, interactive: false }).addTo(pathLayer);
+        L.polyline(path, { color: "#1a73e8", weight: 5, opacity: 0.95, interactive: false }).addTo(pathLayer);
+        if (fit) m.fitBounds(L.latLngBounds(path).extend(to), { padding: [50, 50], maxZoom: 17 });
+      })
+      .catch(() => {
+        if (token !== selectToken) return;
+        els.mapStatus.hidden = false;
+        els.mapStatus.textContent =
+          "The walking route couldn't be loaded. Use “Walking directions (Google Maps)” for the exact route.";
+      });
   }
 
   return {
@@ -272,7 +291,7 @@ function directionsUrl(location, station) {
   return `https://www.google.com/maps/dir/?${params}`;
 }
 
-function resultItem({ station, distanceMiles }, route, index) {
+function resultItem({ station, distanceMiles, routed }, route, index) {
   const primary = index === 0;
   const meta = [BOROUGHS[station.borough] || station.borough];
   if (station.ada === 1) meta.push("ADA accessible");
@@ -315,7 +334,7 @@ function resultItem({ station, distanceMiles }, route, index) {
       "div",
       { class: "result-dist" },
       formatMiles(distanceMiles),
-      el("small", {}, "walking, via streets"),
+      el("small", {}, routed ? "walking route" : "estimate"),
     ),
   );
   // Whole card is a click target (mouse/touch); the button covers keyboard use.
@@ -369,13 +388,44 @@ function update() {
     return;
   }
 
-  const results = findNearestStations(state.stations, state.location.lat, state.location.lon, route.id, 3);
-  if (results.length === 0) {
+  // Quick street-grid estimate first; then real walking distances for the
+  // closest few candidates, which may re-order them.
+  const { lat, lon } = state.location;
+  const candidates = findNearestStations(state.stations, lat, lon, route.id, ROUTING_CANDIDATES);
+  if (candidates.length === 0) {
     renderEmpty(`No stations in the data serve the ${route.label} (${route.name}).`);
     map?.render(state.location, [], route);
     return;
   }
+  const estimate = candidates.slice(0, 3).map((c) => ({ ...c, routed: false }));
+  const token = ++updateToken;
+  if (estimate[0].distanceMiles > FAR_FROM_NYC_MILES) {
+    showResults(estimate, route, "far");
+    return;
+  }
+  showResults(estimate, route, "pending");
+  walkingMiles(lat, lon, candidates.map((c) => c.station))
+    .then((miles) => {
+      if (token === updateToken) showResults(rerankByWalking(candidates, miles, 3), route, "routed");
+    })
+    .catch(() => {
+      if (token === updateToken) showResults(estimate, route, "failed");
+    });
+}
 
+const ROUTING_CANDIDATES = 8;
+const ROUTING_NOTES = {
+  pending: "Calculating walking routes along streets…",
+  routed:
+    "Distances are walking routes along streets (OpenStreetMap). Tap a station to see its route on the map.",
+  failed:
+    "Walking routes are unavailable right now, so distances are street-grid estimates. " +
+    "Use “Walking directions (Google Maps)” for the exact route.",
+  far: "This location looks far from New York City, so distances are rough estimates.",
+};
+let updateToken = 0;
+
+function showResults(results, route, mode) {
   const [nearest, ...alts] = results;
   const children = [el("ul", { class: "results-list" }, resultItem(nearest, route, 0))];
   if (alts.length) {
@@ -384,20 +434,9 @@ function update() {
       el("ul", { class: "results-list" }, ...alts.map((r, i) => resultItem(r, route, i + 1))),
     );
   }
-  children.push(
-    el(
-      "p",
-      { class: "hint" },
-      "Walking distance is estimated along the street grid (“Manhattan distance”). " +
-        "Tap a station to see it on the map; Google Maps gives the exact shortest route.",
-    ),
-  );
-  if (nearest.distanceMiles > FAR_FROM_NYC_MILES) {
-    children.push(
-      el("p", { class: "notice" }, "This location looks far from New York City, so these distances are large."),
-    );
-  }
+  children.push(el("p", { class: mode === "routed" || mode === "pending" ? "hint" : "notice" }, ROUTING_NOTES[mode]));
   els.results.replaceChildren(...children);
+  els.results.setAttribute("aria-busy", String(mode === "pending"));
   map?.render(state.location, results, route);
   selectResult(0, { fit: false });
 }

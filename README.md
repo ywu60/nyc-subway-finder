@@ -1,10 +1,11 @@
 # NYC Subway Finder
 
-Find the nearest NYC subway station that serves the line you want. Allow location (or type a place / tap the map), pick a line, and see the closest station plus two alternatives, ranked by estimated walking distance along the street grid. Tap any result to see it on the map along with its walking path, or open Google Maps walking directions from your location.
+Find the nearest NYC subway station that serves the line you want. Allow location (or type a place / tap the map), pick a line, and see the closest station plus two alternatives, ranked by **real walking distance along streets**. Tap any result to see its walking route on the map, or open Google Maps walking directions from your location.
 
 **Live site:** https://ywu60.github.io/nyc-subway-finder/
 
 - Plain HTML/CSS/JavaScript (ES modules). No build step, no backend, no API keys.
+- Walking routes: public [OSRM foot router](https://routing.openstreetmap.de/) run by FOSSGIS on OpenStreetMap data.
 - Map: [Leaflet](https://leafletjs.com/) 1.9.4 with OpenStreetMap tiles.
 - Data: official [MTA Subway Stations](https://data.ny.gov/Transportation/MTA-Subway-Stations/39hk-dx4f) dataset (NY Open Data), downloaded 2026-10-18.
 - Deployment: **GitHub Pages, branch publishing from `main` / `(root)`**.
@@ -18,7 +19,8 @@ nyc-subway-finder/
 ├── src/
 │   ├── app.js                  # UI: location, route picker, results, map
 │   ├── geo.js                  # street-grid + Haversine distance, formatting, parsing
-│   ├── stations.js             # exact-service filter, complex dedupe, walking-distance ranking
+│   ├── stations.js             # exact-service filter, complex dedupe, ranking + re-ranking
+│   ├── routing.js              # walking distances/routes from the OSRM foot router
 │   ├── routes.js               # route list + MTA colors
 │   └── styles.css
 ├── data/
@@ -48,7 +50,7 @@ Requires Node 18+. No packages to install.
 npm test          # node --test tests/*.test.js
 ```
 
-Tests cover street-grid (Manhattan) distance on north–south and rotated grids, check that it's never shorter than straight-line, check that ranking by it can differ from straight-line, and cover Haversine accuracy against an independent formula, exact-service filtering (e.g. `S` ≠ `SI`), ascending sort, the 3-result limit, complex de-duplication, invalid coordinates, unsupported routes, mile formatting, and checks on the real dataset (all coordinates within NYC, every route has stations, D→F changes results, shuttles stay separate).
+Tests cover re-ranking by routed walking distance (with fallback to estimates), street-grid (Manhattan) distance on north–south and rotated grids, check that it's never shorter than straight-line, check that ranking by it can differ from straight-line, and cover Haversine accuracy against an independent formula, exact-service filtering (e.g. `S` ≠ `SI`), ascending sort, the 3-result limit, complex de-duplication, invalid coordinates, unsupported routes, mile formatting, and checks on the real dataset (all coordinates within NYC, every route has stations, D→F changes results, shuttles stay separate).
 
 ## Rebuild station data
 
@@ -108,11 +110,16 @@ This repo uses **branch publishing**. There's no build step and no Actions workf
 ## Privacy
 
 - Coordinates stay in browser memory for the current tab. Nothing is stored (no cookies, no localStorage), and there's no app server or analytics.
-- Third-party requests: OpenStreetMap tile servers (map images for the visible area), unpkg.com (Leaflet library), OpenStreetMap Nominatim (only when you type a place name; receives the text you typed), and Google Maps (only if you tap "Walking directions"; the link includes your location as the route origin).
+- Third-party requests: OpenStreetMap tile servers (map images for the visible area), **routing.openstreetmap.de (receives your coordinates plus the nearby stations' coordinates, to calculate walking routes)**, unpkg.com (Leaflet library), OpenStreetMap Nominatim (only when you type a place name; receives the text you typed), and Google Maps (only if you tap "Walking directions"; the link includes your location as the route origin).
 
 ## Limitations
 
-- **How distance works:** results are ranked by **Manhattan (street-grid) distance**, i.e. how far you'd walk along a grid of streets: the uptown/downtown leg plus the crosstown leg. For stations in Manhattan the grid is rotated 29° to match the avenues; in other boroughs a north–south/east–west grid is assumed. The map draws this two-leg path for the selected station. It's an estimate: diagonal streets (Broadway), parks, rivers and irregular street layouts make real routes differ.
+- **How distance works:**
+  1. A quick **street-grid (Manhattan) estimate** picks the 8 closest candidate stations. It adds the uptown/downtown leg to the crosstown leg; for Manhattan stations the grid is rotated 29° to match the avenues, elsewhere a north–south/east–west grid is assumed.
+  2. One request to the OSRM foot router gets the **real walking distance along streets** to each candidate. The results are re-ranked, and the top 3 are labelled "walking route".
+  3. Selecting a station draws its actual street route on the map.
+  4. If the router is unreachable or slow (8 s timeout), the app keeps the estimates, labels them "estimate", and draws no route line.
+- The routing service is a free community service with no uptime guarantee. Routes come from OpenStreetMap footpath data and may differ slightly from Google's.
 - **Exact routes:** "Walking directions (Google Maps)" opens Google Maps with your app location as the origin and the station as the destination, in walking mode, so Google finds the actual shortest walking route.
 - Station coordinates are station locations, not entrances or elevators.
 - Services shown are the dataset's **assigned daytime routes**. Late nights, weekends, express/local patterns and planned work can differ, and stations may be temporarily closed or bypassed. There are no real-time arrivals or alerts.

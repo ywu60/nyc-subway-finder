@@ -14,7 +14,7 @@ import {
   streetGridMiles,
 } from "../src/geo.js";
 import { ROUTES } from "../src/routes.js";
-import { availableServices, findNearestStations, validateStationData } from "../src/stations.js";
+import { availableServices, findNearestStations, rerankByWalking, validateStationData } from "../src/stations.js";
 
 const data = JSON.parse(readFileSync(new URL("../data/stations.json", import.meta.url)));
 const stations = validateStationData(data);
@@ -179,4 +179,14 @@ test("real data: shuttles are distinct", () => {
   assert.deepEqual(gs.sort(), ["Grand Central-42 St", "Times Sq-42 St"]);
   const fs = findNearestStations(stations, 40.68, -73.96, "FS", 10);
   assert.ok(fs.every((r) => !gs.includes(r.station.name)));
+});
+
+test("rerankByWalking re-orders by routed distance and keeps estimates as fallback", () => {
+  const candidates = findNearestStations(sample, 40.75, -73.99, "D", 10); // Alpha, Bravo, Delta
+  // Pretend Bravo is a short walk but Alpha needs a long detour; Delta has no route.
+  const res = rerankByWalking(candidates, [2.0, 0.9, null], 3);
+  assert.deepEqual(res.map((r) => r.station.name), ["Bravo", "Alpha", "Delta"]);
+  assert.deepEqual(res.map((r) => r.routed), [true, true, false]);
+  assert.equal(res[0].distanceMiles, 0.9);
+  assert.equal(rerankByWalking(candidates, [1, 2, 3], 2).length, 2);
 });

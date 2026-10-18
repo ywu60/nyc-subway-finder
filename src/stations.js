@@ -1,7 +1,7 @@
 // Station search: filter by exact service ID, rank by street-grid walking
 // distance, and collapse platforms of the same station complex. No DOM access.
 
-import { MANHATTAN_GRID_DEG, haversineMiles, isValidCoordinate, streetGridMiles } from "./geo.js?v=4";
+import { MANHATTAN_GRID_DEG, haversineMiles, isValidCoordinate, streetGridMiles } from "./geo.js?v=5";
 
 /**
  * Validate the parsed contents of data/stations.json.
@@ -60,6 +60,21 @@ export function findNearestStations(stations, lat, lon, routeId, limit = 3) {
   }
 
   return [...bestByComplex.values()]
+    .sort((a, b) => a.distanceMiles - b.distanceMiles)
+    .slice(0, limit);
+}
+
+/**
+ * Re-rank `candidates` (from findNearestStations) using real walking
+ * distances in miles (aligned array; null = no route found). Results with a
+ * route get `distanceMiles` replaced and `routed: true`; the rest keep their
+ * street-grid estimate. Sorted ascending and trimmed to `limit`.
+ */
+export function rerankByWalking(candidates, walkingMiles, limit = 3) {
+  return candidates
+    .map((c, i) =>
+      walkingMiles[i] == null ? { ...c, routed: false } : { ...c, distanceMiles: walkingMiles[i], routed: true },
+    )
     .sort((a, b) => a.distanceMiles - b.distanceMiles)
     .slice(0, limit);
 }
