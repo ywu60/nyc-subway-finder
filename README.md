@@ -118,7 +118,7 @@ This repo uses **branch publishing**. There's no build step and no Actions workf
   1. A quick **street-grid (Manhattan) estimate** picks the 8 closest candidate stations. It adds the uptown/downtown leg to the crosstown leg; for Manhattan stations the grid is rotated 29° to match the avenues, elsewhere a north–south/east–west grid is assumed.
   2. One request to the OSRM foot router gets the **real walking distance along streets** to each candidate. The results are re-ranked, and the top 3 are labelled "walking route".
   3. Selecting a station draws its actual street route on the map.
-  4. If the router is unreachable or slow (8 s timeout), the app keeps the estimates, labels them "estimate", and draws no route line.
+  4. If the router is unreachable, rate-limited or slow (15 s timeout, one retry on HTTP 429), the app keeps the estimates, labels them "estimate", and draws no route line.
 - The routing service is a free community service with no uptime guarantee. Routes come from OpenStreetMap footpath data and may differ slightly from Google's.
 - **Exact routes:** "Walking directions (Google Maps)" opens Google Maps with your app location as the origin and the station as the destination, in walking mode, so Google finds the actual shortest walking route.
 - Station coordinates are station locations, not entrances or elevators.
