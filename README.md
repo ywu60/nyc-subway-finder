@@ -84,7 +84,11 @@ This repo uses **branch publishing**. There's no build step and no Actions workf
 4. Wait for the "pages build and deployment" run under the **Actions** tab to turn green (about 1 minute).
 5. Open `https://<username>.github.io/<repo-name>/`, which here is https://ywu60.github.io/nyc-subway-finder/.
 6. On iPhone Safari and Android Chrome, tap **Use my location**, approve the prompt, pick a line, and check that a result and the map appear.
-7. Later changes: commit and `git push` to `main`. Pages redeploys automatically. You can check progress under **Actions** or **Settings → Pages**.
+7. Later changes: bump the cache-busting version, then commit and `git push` to `main`. Pages redeploys automatically. You can check progress under **Actions** or **Settings → Pages**.
+   ```bash
+   # GitHub Pages lets browsers cache files for 10 minutes; a new ?v= forces fresh CSS/JS.
+   sed -i '' "s/?v=[0-9]*/?v=$(date +%s)/g" index.html src/*.js   # macOS (on Linux: sed -i)
+   ```
 
 **Using a different repo name** works without code changes because every asset path is relative. The URL just becomes `https://<user>.github.io/<new-name>/`.
 
@@ -99,7 +103,7 @@ This repo uses **branch publishing**. There's no build step and no Actions workf
 | **Location never resolves / times out** | Indoor or desktop positioning can be slow. Press **Refresh location**, or type a place or tap the map. |
 | **Location doesn't work when testing from a phone on your LAN** | Geolocation requires HTTPS (or localhost). Test on the GitHub Pages URL. |
 | **Map is blank but results show** | Tile servers are unreachable (offline/blocked). Results don't depend on the map. |
-| **Changes not appearing** | Wait for the Pages run to finish, then hard-reload (Pages caches for ~10 min). |
+| **Changes not appearing** | Make sure you bumped the `?v=` version (step 7), wait for the Pages run to finish, then reload. A hard reload (Cmd/Ctrl+Shift+R) bypasses the 10-minute browser cache. |
 
 ## Privacy
 

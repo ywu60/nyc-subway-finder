@@ -1,9 +1,9 @@
 // UI controller: location, route selection, results and map.
 // Coordinates live only in the `state` object below; nothing is persisted.
 
-import { formatMiles, gridCorner, isValidCoordinate, parseLatLon } from "./geo.js";
-import { ROUTES, getRoute } from "./routes.js";
-import { availableServices, findNearestStations, gridAngleFor, validateStationData } from "./stations.js";
+import { formatMiles, gridCorner, isValidCoordinate, parseLatLon } from "./geo.js?v=4";
+import { ROUTES, getRoute } from "./routes.js?v=4";
+import { availableServices, findNearestStations, gridAngleFor, validateStationData } from "./stations.js?v=4";
 
 const NYC_CENTER = [40.7359, -73.9911];
 const FAR_FROM_NYC_MILES = 20;
@@ -93,6 +93,7 @@ const map = (() => {
   });
 
   const layer = L.layerGroup().addTo(m);
+  m.createPane("userPane").style.zIndex = 700; // above station labels
   const pathLayer = L.layerGroup().addTo(m);
   const userIcon = L.divIcon({
     className: "",
@@ -170,7 +171,7 @@ const map = (() => {
           fillOpacity: 0.08,
           interactive: false,
         }).addTo(layer);
-        L.marker(ll, { icon: userIcon, title: "Your location", keyboard: false, zIndexOffset: 1000 })
+        L.marker(ll, { icon: userIcon, title: "Your location", keyboard: false, pane: "userPane" })
           .bindTooltip(location.source === "gps" ? "You are here" : location.label || "Your location", {
             direction: "bottom",
             offset: [0, 10],
