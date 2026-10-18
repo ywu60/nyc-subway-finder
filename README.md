@@ -1,6 +1,6 @@
 # NYC Subway Finder
 
-Find the nearest NYC subway station that serves the line you want. Allow location (or type a place / tap the map), pick a line, and see the closest station plus two alternatives, ranked by **real walking distance along streets**. Tap any result to see its walking route on the map, or open Google Maps walking directions from your location.
+Find the nearest NYC subway station that serves the line you want. Allow location (or type a place / tap the map), pick a line, and see the closest station plus two alternatives, ranked by **real walking distance along streets**. Every other stop on the chosen line is shown on the map as a small dot. Tap any result to see its walking route on the map, or open Google Maps walking directions from your location.
 
 **Live site:** https://ywu60.github.io/nyc-subway-finder/
 

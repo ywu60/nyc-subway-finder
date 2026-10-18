@@ -288,6 +288,7 @@ main {
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3);
 }
 .legend-selected { width: 10px; height: 10px; border-radius: 50%; background: #888; border: 3px solid #111; }
+.legend-stop { width: 8px; height: 8px; border-radius: 50%; background: #888; border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3); }
 .legend-path { width: 18px; height: 5px; border-radius: 3px; background: #1a73e8; box-shadow: 0 0 0 1px #fff; }
 
 .site-footer {

@@ -1,10 +1,10 @@
 // UI controller: location, route selection, results and map.
 // Coordinates live only in the `state` object below; nothing is persisted.
 
-import { formatMiles, isValidCoordinate, parseLatLon } from "./geo.js?v=6";
-import { ROUTES, getRoute } from "./routes.js?v=6";
-import { walkingMiles, walkingRoute } from "./routing.js?v=6";
-import { availableServices, findNearestStations, rerankByWalking, validateStationData } from "./stations.js?v=6";
+import { formatMiles, isValidCoordinate, parseLatLon } from "./geo.js?v=7";
+import { ROUTES, getRoute } from "./routes.js?v=7";
+import { walkingMiles, walkingRoute } from "./routing.js?v=7";
+import { availableServices, findNearestStations, rerankByWalking, validateStationData } from "./stations.js?v=7";
 
 const NYC_CENTER = [40.7359, -73.9911];
 const FAR_FROM_NYC_MILES = 20;
@@ -95,6 +95,7 @@ const map = (() => {
     els.mapStatus.hidden = true;
   });
 
+  const stopsLayer = L.layerGroup().addTo(m); // every stop on the selected line
   const layer = L.layerGroup().addTo(m);
   m.createPane("userPane").style.zIndex = 700; // above station labels
   const pathLayer = L.layerGroup().addTo(m);
@@ -112,6 +113,7 @@ const map = (() => {
     div.innerHTML =
       '<span><i class="legend-user"></i>You</span>' +
       '<span><i class="legend-selected"></i>Selected station</span>' +
+      '<span><i class="legend-stop"></i>Other stops on line</span>' +
       '<span><i class="legend-path"></i>Walking route</span>';
     return div;
   };
@@ -174,8 +176,24 @@ const map = (() => {
   }
 
   return {
-    render(location, results, route) {
+    render(location, results, route, lineStops = []) {
+      stopsLayer.clearLayers();
       layer.clearLayers();
+      // Small dots for every stop on the line; results get bigger markers on top.
+      const shown = new Set(results.map((r) => r.station.complexId));
+      for (const stop of lineStops) {
+        if (shown.has(stop.complexId)) continue;
+        L.circleMarker([stop.latitude, stop.longitude], {
+          radius: 4,
+          color: "#fff",
+          weight: 1.5,
+          fillColor: route.color,
+          fillOpacity: 1,
+        })
+          .bindTooltip(stop.name, { direction: "top", offset: [0, -4], className: "station-label" })
+          .on("click", (e) => L.DomEvent.stopPropagation(e)) // not a "drop a pin" click
+          .addTo(stopsLayer);
+      }
       pathLayer.clearLayers();
       const points = [];
       const markers = [];
@@ -215,6 +233,10 @@ const map = (() => {
       current = { location, results, route, markers };
       if (points.length > 1) m.fitBounds(points, { padding: [50, 50], maxZoom: 16 });
       else if (points.length === 1) m.setView(points[0], 15);
+      else if (lineStops.length) {
+        // Line chosen but no location yet: show the whole line.
+        m.fitBounds(lineStops.map((s) => [s.latitude, s.longitude]), { padding: [30, 30] });
+      }
     },
     select,
     element: m.getContainer(),
@@ -379,7 +401,7 @@ function update() {
   }
   if (!state.location) {
     renderEmpty("Set your location to see the nearest stations.");
-    map?.render(null, [], null);
+    map?.render(null, [], route, stopsOnLine(route));
     return;
   }
   if (!route) {
@@ -394,7 +416,7 @@ function update() {
   const candidates = findNearestStations(state.stations, lat, lon, route.id, ROUTING_CANDIDATES);
   if (candidates.length === 0) {
     renderEmpty(`No stations in the data serve the ${route.label} (${route.name}).`);
-    map?.render(state.location, [], route);
+    map?.render(state.location, [], route, stopsOnLine(route));
     return;
   }
   const estimate = candidates.slice(0, 3).map((c) => ({ ...c, routed: false }));
@@ -425,6 +447,10 @@ const ROUTING_NOTES = {
 };
 let updateToken = 0;
 
+function stopsOnLine(route) {
+  return state.stations.filter((s) => s.services.includes(route.id));
+}
+
 function showResults(results, route, mode) {
   const [nearest, ...alts] = results;
   const children = [el("ul", { class: "results-list" }, resultItem(nearest, route, 0))];
@@ -437,7 +463,7 @@ function showResults(results, route, mode) {
   children.push(el("p", { class: mode === "routed" || mode === "pending" ? "hint" : "notice" }, ROUTING_NOTES[mode]));
   els.results.replaceChildren(...children);
   els.results.setAttribute("aria-busy", String(mode === "pending"));
-  map?.render(state.location, results, route);
+  map?.render(state.location, results, route, stopsOnLine(route));
   selectResult(0, { fit: false });
 }
 
