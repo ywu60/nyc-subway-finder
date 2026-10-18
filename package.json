@@ -1,0 +1,12 @@
+{
+  "name": "nyc-subway-finder",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Find the nearest NYC subway station serving a chosen line.",
+  "type": "module",
+  "scripts": {
+    "start": "python3 -m http.server 8000",
+    "test": "node --test tests/*.test.js",
+    "data": "python3 scripts/prepare_stations.py --download"
+  }
+}
