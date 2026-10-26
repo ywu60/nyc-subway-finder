@@ -1,14 +1,20 @@
 // UI controller: location, route selection, results and map.
 // Coordinates live only in the `state` object below; nothing is persisted.
 
-import { formatMiles, isValidCoordinate, parseLatLon } from "./geo.js?v=7";
-import { ROUTES, getRoute } from "./routes.js?v=7";
-import { walkingMiles, walkingRoute } from "./routing.js?v=7";
-import { availableServices, findNearestStations, rerankByWalking, validateStationData } from "./stations.js?v=7";
+import { formatMiles, isValidCoordinate, parseLatLon } from "./geo.js?v=8";
+import { ROUTES, getRoute } from "./routes.js?v=8";
+import { walkingMiles, walkingRoute } from "./routing.js?v=8";
+import { availableServices, findNearestStations, rerankByWalking, validateStationData } from "./stations.js?v=8";
 
 const NYC_CENTER = [40.7359, -73.9911];
 const FAR_FROM_NYC_MILES = 20;
-const GEO_OPTIONS = { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 };
+// Fresh fixes only (a cached one is often a coarse Wi-Fi/IP guess). We keep
+// watching for a while because the first fix is usually the least accurate.
+const GEO_OPTIONS = { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 };
+const GOOD_ACCURACY_M = 30; // stop refining once a fix is this good
+const REFINE_MS = 20000; // ...or after this long
+const ROUGH_ACCURACY_M = 100;
+const POOR_ACCURACY_M = 500;
 const BOROUGHS = { M: "Manhattan", Bk: "Brooklyn", Bx: "Bronx", Q: "Queens", SI: "Staten Island" };
 
 const state = {
@@ -199,8 +205,9 @@ const map = (() => {
       const markers = [];
       if (location) {
         const ll = [location.lat, location.lon];
+        // True uncertainty radius, so a coarse fix looks coarse.
         L.circle(ll, {
-          radius: Math.min(Math.max(location.accuracy || 40, 40), 300),
+          radius: Math.min(Math.max(location.accuracy || 40, 40), 5000),
           color: "#1a73e8",
           weight: 1,
           opacity: 0.5,
@@ -208,11 +215,17 @@ const map = (() => {
           fillOpacity: 0.08,
           interactive: false,
         }).addTo(layer);
-        L.marker(ll, { icon: userIcon, title: "Your location", keyboard: false, pane: "userPane" })
-          .bindTooltip(location.source === "gps" ? "You are here" : location.label || "Your location", {
+        // Draggable so the user can correct a fix that is off.
+        L.marker(ll, { icon: userIcon, title: "Your location (drag to adjust)", keyboard: false, pane: "userPane", draggable: true })
+          .bindTooltip(location.source === "gps" ? "You are here · drag to adjust" : location.label || "Your location", {
             direction: "bottom",
             offset: [0, 10],
             className: "user-label",
+          })
+          .on("dragend", (e) => {
+            const p = e.target.getLatLng();
+            setLocation({ lat: p.lat, lon: p.lng, source: "manual", label: "Adjusted location" });
+            setStatus("Using the location you adjusted on the map.");
           })
           .addTo(layer);
         points.push(ll);
@@ -470,6 +483,7 @@ function showResults(results, route, mode) {
 // ---------- Location ----------
 
 function setLocation(location) {
+  if (location.source !== "gps") stopWatching(); // a pin or address wins over GPS
   state.location = location;
   els.refreshBtn.hidden = location.source !== "gps";
   update();
@@ -499,28 +513,81 @@ function requestLocation() {
     els.manual.open = true;
     return;
   }
+  stopWatching();
   setStatus("Finding your location…");
   els.locateBtn.disabled = els.refreshBtn.disabled = true;
-  navigator.geolocation.getCurrentPosition(
+  const watch = { id: null, timer: null, best: null };
+  geoWatch = watch;
+
+  const finish = () => {
+    stopWatching();
+    if (watch.best) setStatus(...finalStatus(watch.best.accuracy));
+  };
+
+  watch.id = navigator.geolocation.watchPosition(
     (pos) => {
-      els.locateBtn.disabled = els.refreshBtn.disabled = false;
-      const { latitude: lat, longitude: lon, accuracy } = pos.coords;
-      if (!isValidCoordinate(lat, lon)) {
-        setStatus("Your device reported an invalid position. Enter a location below.", "error");
-        els.manual.open = true;
-        return;
+      if (geoWatch !== watch) return;
+      const { latitude: lat, longitude: lon } = pos.coords;
+      if (!isValidCoordinate(lat, lon)) return; // wait for a usable fix
+      const accuracy = Number.isFinite(pos.coords.accuracy) ? pos.coords.accuracy : Infinity;
+      // Only re-run the search on a clear improvement, so the routing server
+      // isn't hit for every small jitter.
+      if (!watch.best || accuracy < watch.best.accuracy * 0.75) {
+        watch.best = { lat, lon, accuracy };
+        setLocation({ lat, lon, accuracy, source: "gps" });
       }
-      const acc = Number.isFinite(accuracy) ? ` (±${Math.round(accuracy)} m)` : "";
-      setStatus(`Using your current location${acc}.`, accuracy > 500 ? "warn" : "");
-      setLocation({ lat, lon, accuracy, source: "gps" });
+      if (accuracy <= GOOD_ACCURACY_M) return finish();
+      setStatus(`Improving accuracy… currently ±${Math.round(watch.best.accuracy)} m.`);
     },
     (err) => {
-      els.locateBtn.disabled = els.refreshBtn.disabled = false;
+      if (geoWatch !== watch) return;
+      if (watch.best && err.code !== 1) return finish(); // keep the best fix we got
+      stopWatching();
       setStatus(geoErrorMessage(err), "error");
       els.manual.open = true;
     },
     GEO_OPTIONS,
   );
+  // Stop after the refine window, but only once there's something to show;
+  // otherwise the GEO_OPTIONS timeout usually reports the failure first.
+  const started = Date.now();
+  watch.timer = setTimeout(function check() {
+    if (geoWatch !== watch) return;
+    if (watch.best) return finish();
+    if (Date.now() - started < REFINE_MS + GEO_OPTIONS.timeout) {
+      watch.timer = setTimeout(check, 1000);
+      return;
+    }
+    stopWatching();
+    setStatus(geoErrorMessage({ code: 3 }), "error");
+    els.manual.open = true;
+  }, REFINE_MS);
+}
+
+let geoWatch = null; // the in-progress position watch, if any
+
+function stopWatching() {
+  if (!geoWatch) return;
+  navigator.geolocation.clearWatch(geoWatch.id);
+  clearTimeout(geoWatch.timer);
+  geoWatch = null;
+  els.locateBtn.disabled = els.refreshBtn.disabled = false;
+}
+
+function finalStatus(accuracy) {
+  if (!Number.isFinite(accuracy)) return ["Using your current location."];
+  const acc = `±${Math.round(accuracy)} m`;
+  if (accuracy <= ROUGH_ACCURACY_M) return [`Using your current location (${acc}).`];
+  if (accuracy <= POOR_ACCURACY_M) {
+    return [`Using your current location (${acc}, approximate). If the blue dot is off, drag it to where you are.`, "warn"];
+  }
+  return [
+    `Your device only gave an approximate location (${acc}), so the nearest station may be wrong. ` +
+      "This usually means precise location is off: on iPhone, Settings → Privacy & Security → Location Services → " +
+      "Safari Websites → turn on Precise Location; on a computer, turn on Wi-Fi and allow Location Services for your browser. " +
+      "Or drag the blue dot, tap the map, or enter an address below.",
+    "warn",
+  ];
 }
 
 async function geocode(query) {
