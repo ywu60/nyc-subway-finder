@@ -1,9 +1,9 @@
-// "Compare lines" dialog (opened from the header): highlight up to three
-// lines on their own map and list the stations where you can transfer.
+// "Compare lines" tab: highlight up to three lines on their own map and
+// list the stations where you can transfer between them.
 
-import { badge, el } from "./dom.js?v=13";
-import { ROUTES, getRoute } from "./routes.js?v=13";
-import { BOROUGHS, sharedStations } from "./stations.js?v=13";
+import { badge, el } from "./dom.js?v=14";
+import { ROUTES, getRoute } from "./routes.js?v=14";
+import { BOROUGHS, sharedStations } from "./stations.js?v=14";
 
 const MAX_LINES = 3;
 // Used when a picked line's MTA color is already on the map (1, 2 and 3 are
@@ -21,37 +21,15 @@ export function initCompare(stations, services) {
     clear: $("compare-clear"),
     status: $("compare-status"),
     results: $("compare-results"),
-    dialog: $("compare-dialog"),
-    open: $("compare-open"),
-    close: $("compare-close"),
   };
   const picks = []; // [{ route, color }] in the order chosen
   let lines = null; // route id -> [[lat, lon], ...][] once loaded
   let linesPromise = null;
 
-  // ---------- Dialog ----------
-
-  els.open.disabled = false; // enabled once station data is in
-  els.open.addEventListener("click", () => {
-    els.dialog.showModal();
-    // Leaflet can't measure a hidden container, so the map is made on first open.
-    if (ensureMap()) {
-      map.invalidateSize();
-      render({ fit: !mapShown });
-      mapShown = true;
-    }
-  });
-  els.close.addEventListener("click", () => els.dialog.close());
-  els.dialog.addEventListener("click", (e) => {
-    if (e.target === els.dialog) els.dialog.close(); // tap on the backdrop
-  });
-  els.dialog.addEventListener("close", () => els.open.focus());
-
   // ---------- Map ----------
 
   const L = window.L;
   let map = null;
-  let mapShown = false;
   let lineLayer, stopLayer, transferLayer;
 
   function ensureMap() {
@@ -314,6 +292,7 @@ export function initCompare(stations, services) {
     }
 
     if (fit) {
+      map.invalidateSize(); // the tab may have been resized while hidden
       if (bounds.isValid()) map.fitBounds(bounds, { padding: [30, 30], maxZoom: 14 });
       else if (!picks.length) map.fitBounds(NYC_BOUNDS);
     }
@@ -330,4 +309,12 @@ export function initCompare(stations, services) {
   }
 
   render();
+
+  // The panel lives on its own tab. Leaflet can't measure a hidden container,
+  // so the map is made, and resized, each time the tab is shown.
+  return {
+    show() {
+      if (ensureMap()) render({ fit: true });
+    },
+  };
 }

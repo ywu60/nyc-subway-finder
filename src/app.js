@@ -1,18 +1,18 @@
 // UI controller: location, route selection, results and map.
 // Coordinates live only in the `state` object below; nothing is persisted.
 
-import { badge, el } from "./dom.js?v=13";
-import { formatMiles, isValidCoordinate, parseLatLon } from "./geo.js?v=13";
-import { ROUTES, getRoute } from "./routes.js?v=13";
-import { walkingMiles, walkingRoute } from "./routing.js?v=13";
-import { initCompare } from "./compare.js?v=13";
+import { badge, el } from "./dom.js?v=14";
+import { formatMiles, isValidCoordinate, parseLatLon } from "./geo.js?v=14";
+import { ROUTES, getRoute } from "./routes.js?v=14";
+import { walkingMiles, walkingRoute } from "./routing.js?v=14";
+import { initCompare } from "./compare.js?v=14";
 import {
   BOROUGHS,
   availableServices,
   findNearestStations,
   rerankByWalking,
   validateStationData,
-} from "./stations.js?v=13";
+} from "./stations.js?v=14";
 
 const NYC_CENTER = [40.7359, -73.9911];
 const FAR_FROM_NYC_MILES = 20;
@@ -321,6 +321,8 @@ const map = (() => {
     },
     select,
     element: m.getContainer(),
+    refresh: () => m.invalidateSize(), // after its tab was hidden
+
   };
 })();
 
@@ -707,6 +709,31 @@ els.manualForm.addEventListener("submit", async (e) => {
   }
 });
 
+// ---------- Page tabs (#find, #compare) ----------
+
+let compare = null; // set once station data is in
+
+function currentView() {
+  return location.hash === "#compare" ? "compare" : "find";
+}
+
+function showView() {
+  const view = currentView();
+  for (const main of document.querySelectorAll("main[data-view]")) main.hidden = main.dataset.view !== view;
+  for (const tab of document.querySelectorAll(".nav-tab")) {
+    if (tab.dataset.view === view) tab.setAttribute("aria-current", "page");
+    else tab.removeAttribute("aria-current");
+  }
+  if (view === "compare") compare?.show();
+  else map?.refresh();
+}
+
+window.addEventListener("hashchange", () => {
+  showView();
+  window.scrollTo(0, 0);
+});
+showView();
+
 // ---------- Header maps menu ----------
 
 const mapsMenu = $("maps-menu");
@@ -748,7 +775,12 @@ async function loadStations() {
   }
   renderRoutes();
   update();
-  if (!state.dataError) initCompare(state.stations, state.services);
+  if (state.dataError) {
+    $("compare-results").replaceChildren(el("p", { class: "empty" }, state.dataError));
+    return;
+  }
+  compare = initCompare(state.stations, state.services);
+  if (currentView() === "compare") compare.show();
 }
 
 loadStations();
