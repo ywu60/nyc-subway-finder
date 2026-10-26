@@ -1,18 +1,18 @@
 // UI controller: location, route selection, results and map.
 // Coordinates live only in the `state` object below; nothing is persisted.
 
-import { badge, el } from "./dom.js?v=14";
-import { formatMiles, isValidCoordinate, parseLatLon } from "./geo.js?v=14";
-import { ROUTES, getRoute } from "./routes.js?v=14";
-import { walkingMiles, walkingRoute } from "./routing.js?v=14";
-import { initCompare } from "./compare.js?v=14";
+import { badge, el } from "./dom.js?v=15";
+import { formatMiles, isValidCoordinate, parseLatLon } from "./geo.js?v=15";
+import { ROUTES, getRoute } from "./routes.js?v=15";
+import { walkingMiles, walkingRoute } from "./routing.js?v=15";
+import { initCompare } from "./compare.js?v=15";
 import {
   BOROUGHS,
   availableServices,
   findNearestStations,
   rerankByWalking,
   validateStationData,
-} from "./stations.js?v=14";
+} from "./stations.js?v=15";
 
 const NYC_CENTER = [40.7359, -73.9911];
 const FAR_FROM_NYC_MILES = 20;
@@ -23,6 +23,11 @@ const GOOD_ACCURACY_M = 30; // stop refining once a fix is this good
 const REFINE_MS = 20000; // ...or after this long
 const ROUGH_ACCURACY_M = 100;
 const POOR_ACCURACY_M = 500;
+const COARSE_HINT_M = 1000; // show the precise-location tip while still refining
+const PRECISE_TIP =
+  "This usually means precise location is off. iPhone: Settings → Privacy & Security → Location Services → " +
+  "Safari Websites (or your browser's name, e.g. Chrome) → turn on Precise Location. Computer: turn on Wi-Fi " +
+  "and allow Location Services for your browser. Or drag the blue dot, tap the map, or enter an address below.";
 
 const state = {
   stations: [],
@@ -586,7 +591,7 @@ function requestLocation() {
   stopWatching();
   setStatus("Finding your location…");
   els.locateBtn.disabled = els.refreshBtn.disabled = true;
-  const watch = { id: null, timer: null, best: null };
+  const watch = { id: null, timer: null, best: null, lastError: null };
   geoWatch = watch;
 
   const finish = () => {
@@ -607,29 +612,41 @@ function requestLocation() {
         setLocation({ lat, lon, accuracy, source: "gps" });
       }
       if (accuracy <= GOOD_ACCURACY_M) return finish();
-      setStatus(`Improving accuracy… currently ±${Math.round(watch.best.accuracy)} m.`);
+      const acc = Math.round(watch.best.accuracy);
+      if (watch.best.accuracy > COARSE_HINT_M) {
+        setStatus(`Improving accuracy… currently ±${acc} m, which is very rough. ${PRECISE_TIP}`, "warn");
+      } else {
+        setStatus(`Improving accuracy… currently ±${acc} m.`);
+      }
     },
     (err) => {
       if (geoWatch !== watch) return;
-      if (watch.best && err.code !== 1) return finish(); // keep the best fix we got
+      if (err.code !== 1) {
+        // "Unavailable" and "timeout" are often momentary (indoors, between
+        // GPS and Wi-Fi fixes) and a better fix can follow, so keep watching.
+        watch.lastError = err;
+        if (!watch.best) setStatus("Still looking for your location…");
+        return;
+      }
       stopWatching();
       setStatus(geoErrorMessage(err), "error");
       els.manual.open = true;
     },
     GEO_OPTIONS,
   );
-  // Stop after the refine window, but only once there's something to show;
-  // otherwise the GEO_OPTIONS timeout usually reports the failure first.
+  // Stop after the refine window with the best fix. With no fix yet, keep
+  // waiting (a cold GPS start can be slow) unless the device keeps reporting
+  // errors, then give up with that error.
   const started = Date.now();
   watch.timer = setTimeout(function check() {
     if (geoWatch !== watch) return;
     if (watch.best) return finish();
-    if (Date.now() - started < REFINE_MS + GEO_OPTIONS.timeout) {
+    if (!watch.lastError && Date.now() - started < REFINE_MS + GEO_OPTIONS.timeout) {
       watch.timer = setTimeout(check, 1000);
       return;
     }
     stopWatching();
-    setStatus(geoErrorMessage({ code: 3 }), "error");
+    setStatus(geoErrorMessage(watch.lastError || { code: 3 }), "error");
     els.manual.open = true;
   }, REFINE_MS);
 }
@@ -652,10 +669,7 @@ function finalStatus(accuracy) {
     return [`Using your current location (${acc}, approximate). If the blue dot is off, drag it to where you are.`, "warn"];
   }
   return [
-    `Your device only gave an approximate location (${acc}), so the nearest station may be wrong. ` +
-      "This usually means precise location is off: on iPhone, Settings → Privacy & Security → Location Services → " +
-      "Safari Websites → turn on Precise Location; on a computer, turn on Wi-Fi and allow Location Services for your browser. " +
-      "Or drag the blue dot, tap the map, or enter an address below.",
+    `Your device only gave an approximate location (${acc}), so the nearest station may be wrong. ${PRECISE_TIP}`,
     "warn",
   ];
 }

@@ -1,7 +1,7 @@
 // Station search: filter by exact service ID, rank by street-grid walking
 // distance, and collapse platforms of the same station complex. No DOM access.
 
-import { MANHATTAN_GRID_DEG, haversineMiles, isValidCoordinate, streetGridMiles } from "./geo.js?v=14";
+import { MANHATTAN_GRID_DEG, haversineMiles, isValidCoordinate, streetGridMiles } from "./geo.js?v=15";
 
 export const BOROUGHS = { M: "Manhattan", Bk: "Brooklyn", Bx: "Bronx", Q: "Queens", SI: "Staten Island" };
 

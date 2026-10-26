@@ -1,9 +1,9 @@
 // "Compare lines" tab: highlight up to three lines on their own map and
 // list the stations where you can transfer between them.
 
-import { badge, el } from "./dom.js?v=14";
-import { ROUTES, getRoute } from "./routes.js?v=14";
-import { BOROUGHS, sharedStations } from "./stations.js?v=14";
+import { badge, el } from "./dom.js?v=15";
+import { ROUTES, getRoute } from "./routes.js?v=15";
+import { BOROUGHS, sharedStations } from "./stations.js?v=15";
 
 const MAX_LINES = 3;
 // Used when a picked line's MTA color is already on the map (1, 2 and 3 are
