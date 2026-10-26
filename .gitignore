@@ -3,3 +3,4 @@ node_modules/
 __pycache__/
 *.docx
 ~$*
+data/raw/gtfs_subway.zip

@@ -1,10 +1,18 @@
 // UI controller: location, route selection, results and map.
 // Coordinates live only in the `state` object below; nothing is persisted.
 
-import { formatMiles, isValidCoordinate, parseLatLon } from "./geo.js?v=11";
-import { ROUTES, getRoute } from "./routes.js?v=11";
-import { walkingMiles, walkingRoute } from "./routing.js?v=11";
-import { availableServices, findNearestStations, rerankByWalking, validateStationData } from "./stations.js?v=11";
+import { badge, el } from "./dom.js?v=12";
+import { formatMiles, isValidCoordinate, parseLatLon } from "./geo.js?v=12";
+import { ROUTES, getRoute } from "./routes.js?v=12";
+import { walkingMiles, walkingRoute } from "./routing.js?v=12";
+import { initCompare } from "./compare.js?v=12";
+import {
+  BOROUGHS,
+  availableServices,
+  findNearestStations,
+  rerankByWalking,
+  validateStationData,
+} from "./stations.js?v=12";
 
 const NYC_CENTER = [40.7359, -73.9911];
 const FAR_FROM_NYC_MILES = 20;
@@ -15,7 +23,6 @@ const GOOD_ACCURACY_M = 30; // stop refining once a fix is this good
 const REFINE_MS = 20000; // ...or after this long
 const ROUGH_ACCURACY_M = 100;
 const POOR_ACCURACY_M = 500;
-const BOROUGHS = { M: "Manhattan", Bk: "Brooklyn", Bx: "Bronx", Q: "Queens", SI: "Staten Island" };
 
 const state = {
   stations: [],
@@ -46,31 +53,6 @@ const els = {
 function setStatus(message, kind = "") {
   els.locStatus.textContent = message;
   els.locStatus.className = `status ${kind}`.trim();
-}
-
-function el(tag, attrs = {}, ...children) {
-  const node = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (k === "class") node.className = v;
-    else if (k === "style") Object.assign(node.style, v);
-    else node.setAttribute(k, v);
-  }
-  for (const child of children) {
-    if (child != null) node.append(child);
-  }
-  return node;
-}
-
-function badge(route) {
-  return el(
-    "span",
-    {
-      class: "badge",
-      style: { background: route.color, color: route.text },
-      "aria-label": `${route.name} (${route.label})`,
-    },
-    route.label,
-  );
 }
 
 // ---------- Map (optional: results still work if Leaflet fails) ----------
@@ -766,6 +748,7 @@ async function loadStations() {
   }
   renderRoutes();
   update();
+  if (!state.dataError) initCompare(state.stations, state.services);
 }
 
 loadStations();

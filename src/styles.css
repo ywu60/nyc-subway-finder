@@ -395,3 +395,13 @@ main {
 @media (min-width: 720px) {
   .map { height: 440px; }
 }
+
+/* Compare lines & transfers */
+.compare-routes .route-btn[aria-checked="true"] { box-shadow: 0 0 0 4px var(--pick-color, var(--text)); }
+.compare-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 12px 0 10px; }
+.compare-picked { display: flex; flex-wrap: wrap; gap: 6px 14px; flex: 1; min-width: 0; }
+.compare-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; }
+.compare-swatch { display: inline-block; width: 22px; height: 6px; border-radius: 3px; box-shadow: 0 0 0 1px var(--surface), 0 0 0 2px var(--border); }
+.compare-map { border-radius: 10px; border: 1px solid var(--border); }
+.compare-result { align-items: center; }
+.compare-badges { display: inline-flex; gap: 4px; flex-shrink: 0; }

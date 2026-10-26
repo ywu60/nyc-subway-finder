@@ -1,6 +1,6 @@
 # NYC Subway Finder
 
-Find the nearest NYC subway station that serves the line you want. Allow location (or type a place / tap the map), pick a line, and see the closest station plus two alternatives, ranked by **real walking distance along streets**. Every other stop on the chosen line is shown on the map as a small dot. Tap any result to see its walking route on the map, or open Google Maps walking directions from your location. Turn on **Ridership heatmap** on the map to see which stations are busiest; hover or tap a hotspot for that station's average riders per day. The **Official subway maps** panel opens the MTA's high-resolution PDF maps (full weekday map, late night, accessible stations, large type and the subway diagram). They're linked from mta.info rather than copied, because the MTA doesn't allow redistribution and its links always serve the current edition.
+Find the nearest NYC subway station that serves the line you want. Allow location (or type a place / tap the map), pick a line, and see the closest station plus two alternatives, ranked by **real walking distance along streets**. Every other stop on the chosen line is shown on the map as a small dot. Tap any result to see its walking route on the map, or open Google Maps walking directions from your location. Turn on **Ridership heatmap** on the map to see which stations are busiest; hover or tap a hotspot for that station's average riders per day. **Compare lines & transfers** lets you pick two or three lines: each is drawn on its own map in a distinct color (lines that share track show as nested stripes), and the panel lists the stations where you can change between them, or says there are no intersection stations. With three lines it lists stations served by all three, then each pair. The **Subway maps** menu in the header opens the MTA's high-resolution PDF maps (full weekday map, late night, accessible stations, large type and the subway diagram). They're linked from mta.info rather than copied, because the MTA doesn't allow redistribution and its links always serve the current edition.
 
 **Live site:** https://ywu60.github.io/nyc-subway-finder/
 
@@ -8,6 +8,7 @@ Find the nearest NYC subway station that serves the line you want. Allow locatio
 - Walking routes: public [OSRM foot router](https://routing.openstreetmap.de/) run by FOSSGIS on OpenStreetMap data.
 - Map: [Leaflet](https://leafletjs.com/) 1.9.4 with OpenStreetMap tiles.
 - Data: official [MTA Subway Stations](https://data.ny.gov/Transportation/MTA-Subway-Stations/39hk-dx4f) dataset (NY Open Data), downloaded 2026-10-18.
+- Line paths: [MTA static GTFS](https://www.mta.info/developers) (subway feed), weekday daytime track shapes.
 - Heatmap: [MTA Subway Hourly Ridership: Beginning 2025](https://data.ny.gov/Transportation/MTA-Subway-Hourly-Ridership-Beginning-2025/5wq4-mkjj) (NY Open Data), average daily entries for 2026-09-16 to 2026-10-13, drawn with [Leaflet.heat](https://github.com/Leaflet/Leaflet.heat) 0.2.0.
 - Deployment: **GitHub Pages, branch publishing from `main` / `(root)`**.
 
@@ -19,6 +20,8 @@ nyc-subway-finder/
 ├── .nojekyll                   # serve files as-is on GitHub Pages
 ├── src/
 │   ├── app.js                  # UI: location, route picker, results, map
+│   ├── compare.js              # "Compare lines & transfers" panel
+│   ├── dom.js                  # small DOM helpers (el, badge)
 │   ├── geo.js                  # street-grid + Haversine distance, formatting, parsing
 │   ├── stations.js             # exact-service filter, complex dedupe, ranking + re-ranking
 │   ├── routing.js              # walking distances/routes from the OSRM foot router
@@ -27,10 +30,12 @@ nyc-subway-finder/
 ├── data/
 │   ├── stations.json           # normalized station data used by the app
 │   ├── ridership.json          # average daily entries per station complex (heatmap)
+│   ├── lines.json              # simplified track path of each line (compare panel)
 │   └── raw/MTA_Subway_Stations.csv   # upstream CSV the JSON was built from
 ├── scripts/
 │   ├── prepare_stations.py     # reproducible CSV → JSON conversion
-│   └── prepare_ridership.py    # ridership API → data/ridership.json
+│   ├── prepare_ridership.py    # ridership API → data/ridership.json
+│   └── prepare_lines.py        # MTA GTFS → data/lines.json
 ├── tests/search.test.js        # unit + data tests (Node built-in runner)
 └── package.json                # npm scripts only; no dependencies
 ```
@@ -81,6 +86,18 @@ npm test
 ```
 
 The script asks the NY Open Data API to sum hourly ridership per station complex (one request per week, so each query stays fast), then divides by the number of days. Only subway and Staten Island Railway rows are used. Ridership counts **entries** (fare taps and swipes), not exits. Complex IDs match the `Complex ID` in the station data. The heatmap scales intensity by the square root of ridership, so mid-size stations still show next to Times Sq.
+
+## Rebuild line paths
+
+```bash
+python3 scripts/prepare_lines.py --download   # fetch the MTA subway GTFS zip, then convert
+python3 scripts/prepare_lines.py              # convert data/raw/gtfs_subway.zip (not committed)
+npm test
+```
+
+Only weekday trips whose first departure is 06:00–21:00 count, so each line shows its daytime route, matching the station data's `Daytime Routes`. Shapes used by under 3% of a line's daytime trips (special or short runs) are dropped. Express variants (`6X`, `7X`, `FX`) merge into their line. Each branch is added only once, and paths are simplified to within 6 m, giving a file of about 32 KB.
+
+Transfer stations come from the station data, not GTFS: a station complex counts when its platforms together serve every chosen line, so connected complexes such as Times Sq-42 St / 42 St-Port Authority count as one. Free out-of-system transfers aren't included.
 
 ## Deploy to GitHub Pages
 

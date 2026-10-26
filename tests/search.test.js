@@ -14,7 +14,13 @@ import {
   streetGridMiles,
 } from "../src/geo.js";
 import { ROUTES } from "../src/routes.js";
-import { availableServices, findNearestStations, rerankByWalking, validateStationData } from "../src/stations.js";
+import {
+  availableServices,
+  findNearestStations,
+  rerankByWalking,
+  sharedStations,
+  validateStationData,
+} from "../src/stations.js";
 
 const data = JSON.parse(readFileSync(new URL("../data/stations.json", import.meta.url)));
 const stations = validateStationData(data);
@@ -205,4 +211,43 @@ test("real data: ridership covers known complexes, inside NYC, busiest first", (
   const daily = ridership.stations.map((s) => s.avgDaily);
   assert.deepEqual(daily, [...daily].sort((a, b) => b - a));
   assert.ok(ridership.stations[0].name.startsWith("Times Sq")); // sanity: busiest station
+});
+
+test("sharedStations pools a complex's platforms and needs every line", () => {
+  const platforms = [
+    { id: "p1", complexId: "9", name: "Hub", borough: "M", latitude: 40.75, longitude: -73.99, services: ["1"] },
+    { id: "p2", complexId: "9", name: "Hub Annex", borough: "M", latitude: 40.76, longitude: -73.98, services: ["7"] },
+    { id: "p3", complexId: "8", name: "Solo", borough: "Q", latitude: 40.74, longitude: -73.9, services: ["7"] },
+  ];
+  const [hub, ...rest] = sharedStations(platforms, ["1", "7"]);
+  assert.equal(rest.length, 0);
+  assert.equal(hub.name, "Hub / Hub Annex");
+  assert.deepEqual(hub.services, ["1", "7"]);
+  assert.ok(Math.abs(hub.latitude - 40.755) < 1e-9 && Math.abs(hub.longitude + 73.985) < 1e-9);
+  assert.deepEqual(sharedStations(platforms, ["1", "SI"]), []);
+  assert.deepEqual(sharedStations(platforms, ["7"]), []); // one line: nothing to compare
+});
+
+test("real data: transfer stations between lines", () => {
+  const names = (...ids) => sharedStations(stations, ids).map((s) => s.name);
+  assert.deepEqual(names("1", "7"), ["Times Sq-42 St / 42 St-Port Authority Bus Terminal"]);
+  assert.deepEqual(names("4", "7"), ["Grand Central-42 St"]);
+  assert.deepEqual(names("L", "G"), ["Metropolitan Av / Lorimer St"]);
+  assert.deepEqual(names("G", "SI"), []);
+  assert.deepEqual(names("A", "L", "G"), []);
+  assert.ok(names("1", "2").length >= 5);
+});
+
+test("real data: every line in the picker has a track path inside NYC", () => {
+  const lines = JSON.parse(readFileSync(new URL("../data/lines.json", import.meta.url)));
+  for (const route of ROUTES) {
+    const parts = lines.routes[route.id];
+    assert.ok(parts && parts.length > 0, `no path for ${route.id}`);
+    for (const flat of parts) {
+      assert.ok(flat.length >= 4 && flat.length % 2 === 0, `bad path for ${route.id}`);
+      for (let i = 0; i < flat.length; i += 2) {
+        assert.ok(flat[i] > 40.45 && flat[i] < 40.95 && flat[i + 1] > -74.3 && flat[i + 1] < -73.68);
+      }
+    }
+  }
 });
