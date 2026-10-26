@@ -1,6 +1,6 @@
 # NYC Subway Finder
 
-Find the nearest NYC subway station that serves the line you want. Allow location (or type a place / tap the map), pick a line, and see the closest station plus two alternatives, ranked by **real walking distance along streets**. Every other stop on the chosen line is shown on the map as a small dot. Tap any result to see its walking route on the map, or open Google Maps walking directions from your location.
+Find the nearest NYC subway station that serves the line you want. Allow location (or type a place / tap the map), pick a line, and see the closest station plus two alternatives, ranked by **real walking distance along streets**. Every other stop on the chosen line is shown on the map as a small dot. Tap any result to see its walking route on the map, or open Google Maps walking directions from your location. Turn on **Ridership heatmap** on the map to see which stations are busiest; hover or tap a hotspot for that station's average riders per day.
 
 **Live site:** https://ywu60.github.io/nyc-subway-finder/
 
@@ -8,6 +8,7 @@ Find the nearest NYC subway station that serves the line you want. Allow locatio
 - Walking routes: public [OSRM foot router](https://routing.openstreetmap.de/) run by FOSSGIS on OpenStreetMap data.
 - Map: [Leaflet](https://leafletjs.com/) 1.9.4 with OpenStreetMap tiles.
 - Data: official [MTA Subway Stations](https://data.ny.gov/Transportation/MTA-Subway-Stations/39hk-dx4f) dataset (NY Open Data), downloaded 2026-10-18.
+- Heatmap: [MTA Subway Hourly Ridership: Beginning 2025](https://data.ny.gov/Transportation/MTA-Subway-Hourly-Ridership-Beginning-2025/5wq4-mkjj) (NY Open Data), average daily entries for 2026-09-16 to 2026-10-13, drawn with [Leaflet.heat](https://github.com/Leaflet/Leaflet.heat) 0.2.0.
 - Deployment: **GitHub Pages, branch publishing from `main` / `(root)`**.
 
 ## Repository tree
@@ -25,8 +26,11 @@ nyc-subway-finder/
 │   └── styles.css
 ├── data/
 │   ├── stations.json           # normalized station data used by the app
+│   ├── ridership.json          # average daily entries per station complex (heatmap)
 │   └── raw/MTA_Subway_Stations.csv   # upstream CSV the JSON was built from
-├── scripts/prepare_stations.py # reproducible CSV → JSON conversion
+├── scripts/
+│   ├── prepare_stations.py     # reproducible CSV → JSON conversion
+│   └── prepare_ridership.py    # ridership API → data/ridership.json
 ├── tests/search.test.js        # unit + data tests (Node built-in runner)
 └── package.json                # npm scripts only; no dependencies
 ```
@@ -67,6 +71,16 @@ The script uses only the Python standard library. It checks the required upstrea
 - Services come from the `Daytime Routes` column (space-separated).
 - Each record is one `GTFS Stop ID`. Records sharing a `Complex ID` are one station complex. Search keeps only the closest matching record per complex, so a complex never shows up twice, and the "Also" list shows every line in that complex.
 - The upstream file labels all three shuttles `S`. The script uses the `Line` column to split them into `GS` (42 St), `FS` (Franklin Av; it also stops at Prospect Park) and `H` (Rockaway Park). `SIR` becomes `SI`.
+
+## Rebuild ridership data
+
+```bash
+python3 scripts/prepare_ridership.py             # latest 4 full weeks
+python3 scripts/prepare_ridership.py --days 56   # a longer window
+npm test
+```
+
+The script asks the NY Open Data API to sum hourly ridership per station complex (one request per week, so each query stays fast), then divides by the number of days. Only subway and Staten Island Railway rows are used. Ridership counts **entries** (fare taps and swipes), not exits. Complex IDs match the `Complex ID` in the station data. The heatmap scales intensity by the square root of ridership, so mid-size stations still show next to Times Sq.
 
 ## Deploy to GitHub Pages
 
@@ -111,7 +125,7 @@ This repo uses **branch publishing**. There's no build step and no Actions workf
 ## Privacy
 
 - Coordinates stay in browser memory for the current tab. Nothing is stored (no cookies, no localStorage), and there's no app server or analytics.
-- Third-party requests: OpenStreetMap tile servers (map images for the visible area), **routing.openstreetmap.de (receives your coordinates plus the nearby stations' coordinates, to calculate walking routes)**, unpkg.com (Leaflet library), OpenStreetMap Nominatim (only when you type a place name; receives the text you typed), and Google Maps (only if you tap "Walking directions"; the link includes your location as the route origin).
+- Third-party requests: OpenStreetMap tile servers (map images for the visible area), **routing.openstreetmap.de (receives your coordinates plus the nearby stations' coordinates, to calculate walking routes)**, unpkg.com (Leaflet and Leaflet.heat libraries), OpenStreetMap Nominatim (only when you type a place name; receives the text you typed), and Google Maps (only if you tap "Walking directions"; the link includes your location as the route origin).
 
 ## Limitations
 

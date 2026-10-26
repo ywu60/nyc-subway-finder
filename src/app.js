@@ -1,10 +1,10 @@
 // UI controller: location, route selection, results and map.
 // Coordinates live only in the `state` object below; nothing is persisted.
 
-import { formatMiles, isValidCoordinate, parseLatLon } from "./geo.js?v=8";
-import { ROUTES, getRoute } from "./routes.js?v=8";
-import { walkingMiles, walkingRoute } from "./routing.js?v=8";
-import { availableServices, findNearestStations, rerankByWalking, validateStationData } from "./stations.js?v=8";
+import { formatMiles, isValidCoordinate, parseLatLon } from "./geo.js?v=9";
+import { ROUTES, getRoute } from "./routes.js?v=9";
+import { walkingMiles, walkingRoute } from "./routing.js?v=9";
+import { availableServices, findNearestStations, rerankByWalking, validateStationData } from "./stations.js?v=9";
 
 const NYC_CENTER = [40.7359, -73.9911];
 const FAR_FROM_NYC_MILES = 20;
@@ -124,6 +124,92 @@ const map = (() => {
     return div;
   };
   legend.addTo(m);
+
+  // ---- Ridership heatmap (toggle; data loads on first use) ----
+  m.createPane("ridershipPane").style.zIndex = 390; // hover targets, below station markers
+  const HEAT_GRADIENT = { 0.2: "#2c7bb6", 0.45: "#00a6ca", 0.65: "#f9d057", 0.85: "#f29e2e", 1: "#d7191c" };
+  let heat = null; // { layer, targets } once loaded
+  let heatOn = false;
+  const heatControl = L.control({ position: "topright" });
+  heatControl.onAdd = () => {
+    const div = L.DomUtil.create("div", "heat-control");
+    L.DomEvent.disableClickPropagation(div); // not a "drop a pin" click
+    div.innerHTML =
+      '<button type="button" class="heat-btn" aria-pressed="false">Ridership heatmap</button>' +
+      '<div class="heat-legend" hidden><span class="heat-scale"></span>' +
+      '<span class="heat-labels"><span>Fewer riders</span><span>More</span></span>' +
+      '<span class="heat-period"></span></div>';
+    // Sort: the integer-like key "1" would otherwise come first.
+    const gradient = Object.entries(HEAT_GRADIENT)
+      .sort(([a], [b]) => a - b)
+      .map(([stop, c]) => `${c} ${stop * 100}%`)
+      .join(", ");
+    div.querySelector(".heat-scale").style.background = `linear-gradient(to right, ${gradient})`;
+    div.querySelector(".heat-btn").addEventListener("click", () => toggleHeat(div));
+    return div;
+  };
+  heatControl.addTo(m);
+
+  async function loadHeat() {
+    if (!L.heatLayer) throw new Error("heatmap plugin not loaded");
+    const res = await fetch("data/ridership.json", { cache: "no-cache" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const stations = data.stations.filter((s) => isValidCoordinate(s.latitude, s.longitude) && s.avgDaily > 0);
+    const max = Math.max(...stations.map((s) => s.avgDaily));
+    // Square root so mid-size stations still show next to Times Sq.
+    const points = stations.map((s) => [s.latitude, s.longitude, Math.sqrt(s.avgDaily / max)]);
+    const layer = L.heatLayer(points, { radius: 22, blur: 18, maxZoom: 13, max: 1, minOpacity: 0.25, gradient: HEAT_GRADIENT });
+    const targets = L.layerGroup(
+      stations.map((s) =>
+        L.circleMarker([s.latitude, s.longitude], { pane: "ridershipPane", radius: 9, stroke: false, fillOpacity: 0 })
+          .bindTooltip(`${s.name}<br>${s.avgDaily.toLocaleString("en-US")} riders/day`, {
+            direction: "top",
+            className: "station-label",
+          })
+          .on("click", (e) => L.DomEvent.stopPropagation(e)),
+      ),
+    );
+    const fmt = (d, opts) => new Date(`${d}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", ...opts });
+    const period = `${fmt(data.periodStart)} – ${fmt(data.periodEnd, { year: "numeric" })}`;
+    return { layer, targets, period: `Avg daily entries, ${period}` };
+  }
+
+  async function toggleHeat(div) {
+    const btn = div.querySelector(".heat-btn");
+    const legendBox = div.querySelector(".heat-legend");
+    heatOn = !heatOn;
+    btn.setAttribute("aria-pressed", String(heatOn));
+    if (!heatOn) {
+      if (heat) {
+        heat.layer.remove();
+        heat.targets.remove();
+      }
+      legendBox.hidden = true;
+      return;
+    }
+    if (!heat) {
+      btn.disabled = true;
+      btn.textContent = "Loading…";
+      try {
+        heat = await loadHeat();
+      } catch (err) {
+        console.error(err);
+        heatOn = false;
+        btn.setAttribute("aria-pressed", "false");
+        els.mapStatus.hidden = false;
+        els.mapStatus.textContent = "The ridership heatmap couldn't be loaded. Check your connection and try again.";
+        return;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Ridership heatmap";
+      }
+      div.querySelector(".heat-period").textContent = heat.period;
+    }
+    heat.layer.addTo(m);
+    heat.targets.addTo(m);
+    legendBox.hidden = false;
+  }
 
   m.on("click", (e) => {
     setLocation({ lat: e.latlng.lat, lon: e.latlng.lng, source: "manual", label: "Dropped pin" });

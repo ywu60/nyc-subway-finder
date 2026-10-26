@@ -190,3 +190,19 @@ test("rerankByWalking re-orders by routed distance and keeps estimates as fallba
   assert.equal(res[0].distanceMiles, 0.9);
   assert.equal(rerankByWalking(candidates, [1, 2, 3], 2).length, 2);
 });
+
+test("real data: ridership covers known complexes, inside NYC, busiest first", () => {
+  const ridership = JSON.parse(readFileSync(new URL("../data/ridership.json", import.meta.url)));
+  const complexIds = new Set(stations.map((s) => s.complexId));
+  assert.ok(ridership.stations.length > 300);
+  assert.equal(ridership.count, ridership.stations.length);
+  for (const s of ridership.stations) {
+    assert.ok(complexIds.has(s.complexId), `unknown complex ${s.complexId}`);
+    assert.ok(isValidCoordinate(s.latitude, s.longitude));
+    assert.ok(s.latitude > 40.45 && s.latitude < 40.95 && s.longitude > -74.3 && s.longitude < -73.68);
+    assert.ok(Number.isInteger(s.avgDaily) && s.avgDaily >= 0);
+  }
+  const daily = ridership.stations.map((s) => s.avgDaily);
+  assert.deepEqual(daily, [...daily].sort((a, b) => b - a));
+  assert.ok(ridership.stations[0].name.startsWith("Times Sq")); // sanity: busiest station
+});
