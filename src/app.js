@@ -1,10 +1,10 @@
 // UI controller: location, route selection, results and map.
 // Coordinates live only in the `state` object below; nothing is persisted.
 
-import { formatMiles, isValidCoordinate, parseLatLon } from "./geo.js?v=9";
-import { ROUTES, getRoute } from "./routes.js?v=9";
-import { walkingMiles, walkingRoute } from "./routing.js?v=9";
-import { availableServices, findNearestStations, rerankByWalking, validateStationData } from "./stations.js?v=9";
+import { formatMiles, isValidCoordinate, parseLatLon } from "./geo.js?v=10";
+import { ROUTES, getRoute } from "./routes.js?v=10";
+import { walkingMiles, walkingRoute } from "./routing.js?v=10";
+import { availableServices, findNearestStations, rerankByWalking, validateStationData } from "./stations.js?v=10";
 
 const NYC_CENTER = [40.7359, -73.9911];
 const FAR_FROM_NYC_MILES = 20;

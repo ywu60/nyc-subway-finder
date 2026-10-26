@@ -1,6 +1,6 @@
 # NYC Subway Finder
 
-Find the nearest NYC subway station that serves the line you want. Allow location (or type a place / tap the map), pick a line, and see the closest station plus two alternatives, ranked by **real walking distance along streets**. Every other stop on the chosen line is shown on the map as a small dot. Tap any result to see its walking route on the map, or open Google Maps walking directions from your location. Turn on **Ridership heatmap** on the map to see which stations are busiest; hover or tap a hotspot for that station's average riders per day.
+Find the nearest NYC subway station that serves the line you want. Allow location (or type a place / tap the map), pick a line, and see the closest station plus two alternatives, ranked by **real walking distance along streets**. Every other stop on the chosen line is shown on the map as a small dot. Tap any result to see its walking route on the map, or open Google Maps walking directions from your location. Turn on **Ridership heatmap** on the map to see which stations are busiest; hover or tap a hotspot for that station's average riders per day. The **Official subway maps** panel opens the MTA's high-resolution PDF maps (full weekday map, late night, accessible stations, large type and the subway diagram). They're linked from mta.info rather than copied, because the MTA doesn't allow redistribution and its links always serve the current edition.
 
 **Live site:** https://ywu60.github.io/nyc-subway-finder/
 
@@ -125,7 +125,7 @@ This repo uses **branch publishing**. There's no build step and no Actions workf
 ## Privacy
 
 - Coordinates stay in browser memory for the current tab. Nothing is stored (no cookies, no localStorage), and there's no app server or analytics.
-- Third-party requests: OpenStreetMap tile servers (map images for the visible area), **routing.openstreetmap.de (receives your coordinates plus the nearby stations' coordinates, to calculate walking routes)**, unpkg.com (Leaflet and Leaflet.heat libraries), OpenStreetMap Nominatim (only when you type a place name; receives the text you typed), and Google Maps (only if you tap "Walking directions"; the link includes your location as the route origin).
+- Third-party requests: OpenStreetMap tile servers (map images for the visible area), **routing.openstreetmap.de (receives your coordinates plus the nearby stations' coordinates, to calculate walking routes)**, unpkg.com (Leaflet and Leaflet.heat libraries), OpenStreetMap Nominatim (only when you type a place name; receives the text you typed), and Google Maps (only if you tap "Walking directions"; the link includes your location as the route origin), and mta.info (only if you open an official map PDF).
 
 ## Limitations
 

@@ -1,7 +1,7 @@
 // Station search: filter by exact service ID, rank by street-grid walking
 // distance, and collapse platforms of the same station complex. No DOM access.
 
-import { MANHATTAN_GRID_DEG, haversineMiles, isValidCoordinate, streetGridMiles } from "./geo.js?v=9";
+import { MANHATTAN_GRID_DEG, haversineMiles, isValidCoordinate, streetGridMiles } from "./geo.js?v=10";
 
 /**
  * Validate the parsed contents of data/stations.json.
