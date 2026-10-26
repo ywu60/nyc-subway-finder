@@ -1,10 +1,10 @@
 // UI controller: location, route selection, results and map.
 // Coordinates live only in the `state` object below; nothing is persisted.
 
-import { formatMiles, isValidCoordinate, parseLatLon } from "./geo.js?v=10";
-import { ROUTES, getRoute } from "./routes.js?v=10";
-import { walkingMiles, walkingRoute } from "./routing.js?v=10";
-import { availableServices, findNearestStations, rerankByWalking, validateStationData } from "./stations.js?v=10";
+import { formatMiles, isValidCoordinate, parseLatLon } from "./geo.js?v=11";
+import { ROUTES, getRoute } from "./routes.js?v=11";
+import { walkingMiles, walkingRoute } from "./routing.js?v=11";
+import { availableServices, findNearestStations, rerankByWalking, validateStationData } from "./stations.js?v=11";
 
 const NYC_CENTER = [40.7359, -73.9911];
 const FAR_FROM_NYC_MILES = 20;
@@ -723,6 +723,23 @@ els.manualForm.addEventListener("submit", async (e) => {
   } catch {
     setStatus("Place lookup is unavailable right now. Enter “lat, lon” or tap the map instead.", "error");
   }
+});
+
+// ---------- Header maps menu ----------
+
+const mapsMenu = $("maps-menu");
+const closeMapsMenu = () => mapsMenu.removeAttribute("open");
+document.addEventListener("click", (e) => {
+  if (!mapsMenu.contains(e.target)) closeMapsMenu();
+});
+mapsMenu.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && mapsMenu.open) {
+    closeMapsMenu();
+    mapsMenu.querySelector("summary").focus();
+  }
+});
+mapsMenu.querySelector(".maps-list").addEventListener("click", (e) => {
+  if (e.target.closest("a")) closeMapsMenu(); // the PDF opens in a new tab
 });
 
 els.locateBtn.addEventListener("click", requestLocation);
