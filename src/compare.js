@@ -1,9 +1,9 @@
-// "Compare lines" panel: highlight up to three lines on their own map and
-// list the stations where you can transfer between them.
+// "Compare lines" dialog (opened from the header): highlight up to three
+// lines on their own map and list the stations where you can transfer.
 
-import { badge, el } from "./dom.js?v=12";
-import { ROUTES, getRoute } from "./routes.js?v=12";
-import { BOROUGHS, sharedStations } from "./stations.js?v=12";
+import { badge, el } from "./dom.js?v=13";
+import { ROUTES, getRoute } from "./routes.js?v=13";
+import { BOROUGHS, sharedStations } from "./stations.js?v=13";
 
 const MAX_LINES = 3;
 // Used when a picked line's MTA color is already on the map (1, 2 and 3 are
@@ -21,17 +21,45 @@ export function initCompare(stations, services) {
     clear: $("compare-clear"),
     status: $("compare-status"),
     results: $("compare-results"),
+    dialog: $("compare-dialog"),
+    open: $("compare-open"),
+    close: $("compare-close"),
   };
   const picks = []; // [{ route, color }] in the order chosen
   let lines = null; // route id -> [[lat, lon], ...][] once loaded
   let linesPromise = null;
 
+  // ---------- Dialog ----------
+
+  els.open.disabled = false; // enabled once station data is in
+  els.open.addEventListener("click", () => {
+    els.dialog.showModal();
+    // Leaflet can't measure a hidden container, so the map is made on first open.
+    if (ensureMap()) {
+      map.invalidateSize();
+      render({ fit: !mapShown });
+      mapShown = true;
+    }
+  });
+  els.close.addEventListener("click", () => els.dialog.close());
+  els.dialog.addEventListener("click", (e) => {
+    if (e.target === els.dialog) els.dialog.close(); // tap on the backdrop
+  });
+  els.dialog.addEventListener("close", () => els.open.focus());
+
   // ---------- Map ----------
 
   const L = window.L;
   let map = null;
+  let mapShown = false;
   let lineLayer, stopLayer, transferLayer;
-  if (L) {
+
+  function ensureMap() {
+    if (map) return true;
+    if (!L) {
+      showStatus("The map could not be loaded. Transfer stations are still listed below.");
+      return false;
+    }
     map = L.map("compare-map").fitBounds(NYC_BOUNDS);
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
@@ -42,8 +70,7 @@ export function initCompare(stations, services) {
     lineLayer = L.layerGroup().addTo(map);
     stopLayer = L.layerGroup().addTo(map);
     transferLayer = L.layerGroup().addTo(map);
-  } else {
-    showStatus("The map could not be loaded. Transfer stations are still listed below.");
+    return true;
   }
 
   function showStatus(message) {

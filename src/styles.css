@@ -47,9 +47,10 @@ a { color: var(--accent); }
 .site-header h1 { margin: 0; font-size: 1.35rem; letter-spacing: -0.01em; }
 .tagline { margin: 2px 0 0; color: #cfcfcf; font-size: 0.95rem; }
 
-/* "Subway maps" menu in the header (links to official MTA PDFs) */
-.maps-menu { position: relative; display: inline-block; margin-top: 10px; }
-.maps-btn {
+/* Header actions: "Subway maps" menu (official MTA PDFs) and "Compare lines" */
+.header-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.maps-menu { position: relative; display: inline-block; }
+.header-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -58,17 +59,20 @@ a { color: var(--accent); }
   border: 1px solid #555;
   border-radius: 10px;
   color: #fff;
+  background: none;
+  font: inherit;
   font-weight: 600;
   font-size: 0.95rem;
   cursor: pointer;
   list-style: none;
   user-select: none;
 }
+.header-btn:hover { border-color: #999; }
+.header-btn:disabled { opacity: 0.5; cursor: progress; }
 .maps-btn::-webkit-details-marker { display: none; }
 .maps-btn::before { content: "🗺"; }
 .maps-btn::after { content: "▾"; font-size: 0.8em; transition: transform 0.15s; }
 .maps-menu[open] .maps-btn::after { transform: rotate(180deg); }
-.maps-btn:hover { border-color: #999; }
 .maps-list {
   position: absolute;
   z-index: 1100; /* above the Leaflet map */
@@ -95,6 +99,7 @@ a { color: var(--accent); }
 .maps-list .maps-main { font-weight: 600; color: var(--accent); border-bottom: 1px solid var(--border); border-radius: 8px 8px 0 0; margin-bottom: 4px; }
 .maps-list .maps-main::after { content: none; }
 .maps-list .maps-main small { display: block; font-weight: 400; color: var(--muted); font-size: 0.8rem; margin-top: 2px; }
+.compare-btn::before { content: "⇄"; font-size: 1.1em; }
 .maps-note { margin: 4px 12px 6px; font-size: 0.75rem; color: var(--muted); }
 
 main {
@@ -396,7 +401,48 @@ main {
   .map { height: 440px; }
 }
 
-/* Compare lines & transfers */
+/* Compare lines & transfers (dialog opened from the header) */
+.compare-dialog {
+  width: min(760px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.compare-dialog[open] { display: flex; flex-direction: column; }
+.compare-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+body:has(.compare-dialog[open]) { overflow: hidden; }
+.dialog-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 12px 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.dialog-bar .section-title { margin: 0; }
+.dialog-close {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+.dialog-close:hover { filter: brightness(0.95); }
+.dialog-body { padding: 16px; overflow-y: auto; overscroll-behavior: contain; }
+@media (max-width: 600px) {
+  .compare-dialog { width: 100vw; height: 100dvh; max-height: none; margin: 0; border-radius: 0; }
+}
 .compare-routes .route-btn[aria-checked="true"] { box-shadow: 0 0 0 4px var(--pick-color, var(--text)); }
 .compare-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 12px 0 10px; }
 .compare-picked { display: flex; flex-wrap: wrap; gap: 6px 14px; flex: 1; min-width: 0; }
